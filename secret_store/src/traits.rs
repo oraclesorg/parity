@@ -16,7 +16,7 @@
 
 use std::collections::BTreeSet;
 use ethkey::{KeyPair, Signature, Error as EthKeyError};
-use bigint::hash::H256;
+use ethereum_types::{H256, Address};
 use types::all::{Error, Public, ServerKeyId, MessageHash, EncryptedMessageSignature, RequestSignature, EncryptedDocumentKey,
 	EncryptedDocumentKeyShadow, NodeId};
 
@@ -24,6 +24,8 @@ use types::all::{Error, Public, ServerKeyId, MessageHash, EncryptedMessageSignat
 pub trait NodeKeyPair: Send + Sync {
 	/// Public portion of key.
 	fn public(&self) -> &Public;
+	/// Address of key owner.
+	fn address(&self) -> Address;
 	/// Sign data with node key.
 	fn sign(&self, data: &H256) -> Result<Signature, EthKeyError>;
 	/// Compute shared key to encrypt channel between two nodes.
@@ -74,12 +76,19 @@ pub trait DocumentKeyServer: ServerKeyGenerator {
 
 /// Message signer.
 pub trait MessageSigner: ServerKeyGenerator {
-	/// Sign message with previously generated SK.
+	/// Generate Schnorr signature for message with previously generated SK.
 	/// `key_id` is the caller-provided identifier of generated SK.
 	/// `signature` is `key_id`, signed with caller public key.
 	/// `message` is the message to be signed.
 	/// Result is a signed message, encrypted with caller public key.
-	fn sign_message(&self, key_id: &ServerKeyId, signature: &RequestSignature, message: MessageHash) -> Result<EncryptedMessageSignature, Error>;
+	fn sign_message_schnorr(&self, key_id: &ServerKeyId, signature: &RequestSignature, message: MessageHash) -> Result<EncryptedMessageSignature, Error>;
+	/// Generate ECDSA signature for message with previously generated SK.
+	/// WARNING: only possible when SK was generated using t <= 2 * N.
+	/// `key_id` is the caller-provided identifier of generated SK.
+	/// `signature` is `key_id`, signed with caller public key.
+	/// `message` is the message to be signed.
+	/// Result is a signed message, encrypted with caller public key.
+	fn sign_message_ecdsa(&self, key_id: &ServerKeyId, signature: &RequestSignature, message: MessageHash) -> Result<EncryptedMessageSignature, Error>;
 }
 
 /// Administrative sessions server.

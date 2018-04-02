@@ -16,7 +16,6 @@
 
 //! Tracing
 
-mod bloom;
 mod config;
 mod db;
 mod executive_tracer;
@@ -31,15 +30,13 @@ pub use self::executive_tracer::{ExecutiveTracer, ExecutiveVMTracer};
 pub use self::import::ImportRequest;
 pub use self::localized::LocalizedTrace;
 
-pub use self::types::{filter, flat, localized, trace};
+pub use self::types::{filter, flat, localized, trace, Tracing};
 pub use self::types::error::Error as TraceError;
 pub use self::types::trace::{VMTrace, VMOperation, VMExecutedOperation, MemoryDiff, StorageDiff, RewardType};
 pub use self::types::flat::{FlatTrace, FlatTransactionTraces, FlatBlockTraces};
 pub use self::types::filter::{Filter, AddressesFilter};
 
-use bigint::prelude::U256;
-use bigint::hash::H256;
-use util::Address;
+use ethereum_types::{H256, U256, Address};
 use kvdb::DBTransaction;
 use bytes::Bytes;
 use self::trace::{Call, Create};
@@ -107,7 +104,7 @@ pub trait VMTracer: Send {
 	/// Trace the progression of interpreter to next instruction.
 	/// If tracer returns `false` it won't be called again.
 	/// @returns true if `trace_prepare_execute` and `trace_executed` should be called.
-	fn trace_next_instruction(&mut self, _pc: usize, _instruction: u8) -> bool { false }
+	fn trace_next_instruction(&mut self, _pc: usize, _instruction: u8, _current_gas: U256) -> bool { false }
 
 	/// Trace the preparation to execute a single valid instruction.
 	fn trace_prepare_execute(&mut self, _pc: usize, _instruction: u8, _gas_cost: U256) {}

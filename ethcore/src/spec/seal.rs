@@ -16,8 +16,8 @@
 
 //! Spec seal.
 
-use rlp::*;
-use bigint::hash::{H64, H256, H520};
+use rlp::RlpStream;
+use ethereum_types::{H64, H256, H520};
 use ethjson;
 
 /// Classic ethereum seal.

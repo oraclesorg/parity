@@ -22,7 +22,7 @@ use super::ValidatorSet;
 /// Authority params deserialization.
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct AuthorityRoundParams {
-	/// Block duration.
+	/// Block duration, in seconds.
 	#[serde(rename="stepDuration")]
 	pub step_duration: Uint,
 	/// Valid authorities
@@ -49,6 +49,12 @@ pub struct AuthorityRoundParams {
 	/// Maximum number of accepted uncles.
 	#[serde(rename="maximumUncleCount")]
 	pub maximum_uncle_count: Option<Uint>,
+	/// Block at which empty step messages should start.
+	#[serde(rename="emptyStepsTransition")]
+	pub empty_steps_transition: Option<Uint>,
+	/// Maximum number of accepted empty steps.
+	#[serde(rename="maximumEmptySteps")]
+	pub maximum_empty_steps: Option<Uint>,
 }
 
 /// Authority engine deserialization.
@@ -60,7 +66,7 @@ pub struct AuthorityRound {
 
 #[cfg(test)]
 mod tests {
-	use bigint::prelude::{U256, H160};
+	use ethereum_types::{U256, H160};
 	use uint::Uint;
 	use serde_json;
 	use hash::Address;

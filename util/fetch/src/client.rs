@@ -114,7 +114,7 @@ impl Clone for Client {
 
 impl Client {
 	fn new_client() -> Result<Arc<reqwest::Client>, Error> {
-		let mut client = reqwest::ClientBuilder::new()?;
+		let mut client = reqwest::ClientBuilder::new();
 		client.redirect(reqwest::RedirectPolicy::limited(5));
 		Ok(Arc::new(client.build()?))
 	}
@@ -125,6 +125,11 @@ impl Client {
 			pool: CpuPool::new(4),
 			limit: limit,
 		})
+	}
+
+	/// Sets a limit on the maximum download size.
+	pub fn set_limit(&mut self, limit: Option<usize>) {
+		self.limit = limit
 	}
 
 	fn client(&self) -> Result<Arc<reqwest::Client>, Error> {
@@ -150,8 +155,8 @@ impl Fetch for Client {
 	type Result = CpuFuture<Response, Error>;
 
 	fn new() -> Result<Self, Error> {
-		// Max 50MB will be downloaded.
-		Self::with_limit(Some(50*1024*1024))
+		// Max 64MB will be downloaded.
+		Self::with_limit(Some(64 * 1024 * 1024))
 	}
 
 	fn process<F, I, E>(&self, f: F) -> BoxFuture<I, E> where
@@ -208,7 +213,7 @@ impl Future for FetchTask {
 		}
 
 		trace!(target: "fetch", "Starting fetch task: {:?}", self.url);
-		let result = self.client.get(&self.url)?
+		let result = self.client.get(&self.url)
 						  .header(reqwest::header::UserAgent::new("Parity Fetch"))
 						  .send()?;
 

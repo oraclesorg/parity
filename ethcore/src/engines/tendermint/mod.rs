@@ -29,10 +29,8 @@ use std::sync::{Weak, Arc};
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::collections::{HashSet, BTreeMap};
 use hash::keccak;
-use bigint::prelude::{U128, U256};
-use bigint::hash::{H256, H520};
+use ethereum_types::{H256, H520, U128, U256, Address};
 use parking_lot::RwLock;
-use util::*;
 use unexpected::{OutOfBounds, Mismatch};
 use client::EngineClient;
 use bytes::Bytes;
@@ -50,7 +48,6 @@ use super::transition::TransitionHandler;
 use super::vote_collector::VoteCollector;
 use self::message::*;
 use self::params::TendermintParams;
-use semantic_version::SemanticVersion;
 use machine::{AuxiliaryData, EthereumMachine};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -226,7 +223,7 @@ impl Tendermint {
 			(Some(validator), Ok(signature)) => {
 				let message_rlp = message_full_rlp(&signature, &vote_info);
 				let message = ConsensusMessage::new(signature, h, r, s, block_hash);
-				self.votes.vote(message.clone(), &validator);
+				self.votes.vote(message.clone(), validator);
 				debug!(target: "engine", "Generated {:?} as {}.", message, validator);
 				self.handle_valid_message(&message);
 
@@ -443,10 +440,8 @@ impl Tendermint {
 impl Engine<EthereumMachine> for Tendermint {
 	fn name(&self) -> &str { "Tendermint" }
 
-	fn version(&self) -> SemanticVersion { SemanticVersion::new(1, 0, 0) }
-
 	/// (consensus view, proposal signature, authority signatures)
-	fn seal_fields(&self) -> usize { 3 }
+	fn seal_fields(&self, _header: &Header) -> usize { 3 }
 
 	fn machine(&self) -> &EthereumMachine { &self.machine }
 
@@ -498,7 +493,7 @@ impl Engine<EthereumMachine> for Tendermint {
 		if let Ok(signature) = self.sign(keccak(&vote_info)).map(Into::into) {
 			// Insert Propose vote.
 			debug!(target: "engine", "Submitting proposal {} at height {} view {}.", header.bare_hash(), height, view);
-			self.votes.vote(ConsensusMessage::new(signature, height, view, Step::Propose, bh), author);
+			self.votes.vote(ConsensusMessage::new(signature, height, view, Step::Propose, bh), *author);
 			// Remember the owned block.
 			*self.last_proposed.write() = header.bare_hash();
 			// Remember proposal for later seal submission.
@@ -532,7 +527,7 @@ impl Engine<EthereumMachine> for Tendermint {
 				return Err(EngineError::NotAuthorized(sender));
 			}
 			self.broadcast_message(rlp.as_raw().to_vec());
-			if let Some(double) = self.votes.vote(message.clone(), &sender) {
+			if let Some(double) = self.votes.vote(message.clone(), sender) {
 				let height = message.vote_step.height as BlockNumber;
 				self.validators.report_malicious(&sender, height, height, ::rlp::encode(&double).into_vec());
 				return Err(EngineError::DoubleVote(sender));
@@ -547,7 +542,7 @@ impl Engine<EthereumMachine> for Tendermint {
 		if !epoch_begin { return Ok(()) }
 
 		// genesis is never a new block, but might as well check.
-		let header = block.fields().header.clone();
+		let header = block.header().clone();
 		let first = header.number() == 0;
 
 		let mut call = |to, data| {
@@ -566,7 +561,10 @@ impl Engine<EthereumMachine> for Tendermint {
 
 	/// Apply the block reward on finalisation of the block.
 	fn on_close_block(&self, block: &mut ExecutedBlock) -> Result<(), Error>{
-		::engines::common::bestow_block_reward(block, self.block_reward)
+		use parity_machine::WithBalances;
+		let author = *block.header().author();
+		self.machine.add_balance(block, &author, &self.block_reward)?;
+		self.machine.note_rewards(block, &[(author, self.block_reward)], &[])
 	}
 
 	fn verify_local_seal(&self, _header: &Header) -> Result<(), Error> {
@@ -575,7 +573,8 @@ impl Engine<EthereumMachine> for Tendermint {
 
 	fn verify_block_basic(&self, header: &Header) -> Result<(), Error> {
 		let seal_length = header.seal().len();
-		if seal_length == self.seal_fields() {
+		let expected_seal_fields = self.seal_fields(header);
+		if seal_length == expected_seal_fields {
 			// Either proposal or commit.
 			if (header.seal()[1] == ::rlp::NULL_RLP)
 				!= (header.seal()[2] == ::rlp::EMPTY_LIST_RLP) {
@@ -586,7 +585,7 @@ impl Engine<EthereumMachine> for Tendermint {
 			}
 		} else {
 			Err(BlockError::InvalidSealArity(
-				Mismatch { expected: self.seal_fields(), found: seal_length }
+				Mismatch { expected: expected_seal_fields, found: seal_length }
 			).into())
 		}
 	}
@@ -720,7 +719,7 @@ impl Engine<EthereumMachine> for Tendermint {
 			*self.proposal.write() = proposal.block_hash.clone();
 			*self.proposal_parent.write() = header.parent_hash().clone();
 		}
-		self.votes.vote(proposal, &proposer);
+		self.votes.vote(proposal, proposer);
 		true
 	}
 
@@ -777,12 +776,11 @@ impl Engine<EthereumMachine> for Tendermint {
 mod tests {
 	use std::str::FromStr;
 	use rustc_hex::FromHex;
-	use util::*;
+	use ethereum_types::Address;
 	use bytes::Bytes;
 	use block::*;
 	use error::{Error, BlockError};
 	use header::Header;
-	use client::ChainNotify;
 	use miner::MinerService;
 	use tests::helpers::*;
 	use account_provider::AccountProvider;
@@ -842,22 +840,10 @@ mod tests {
 		addr
 	}
 
-	#[derive(Default)]
-	struct TestNotify {
-		messages: RwLock<Vec<Bytes>>,
-	}
-
-	impl ChainNotify for TestNotify {
-		fn broadcast(&self, data: Vec<u8>) {
-			self.messages.write().push(data);
-		}
-	}
-
 	#[test]
 	fn has_valid_metadata() {
 		let engine = Spec::new_test_tendermint().engine;
 		assert!(!engine.name().is_empty());
-		assert!(engine.version().major >= 1);
 	}
 
 	#[test]

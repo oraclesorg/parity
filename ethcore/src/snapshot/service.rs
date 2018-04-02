@@ -23,7 +23,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use super::{ManifestData, StateRebuilder, Rebuilder, RestorationStatus, SnapshotService};
+use super::{ManifestData, StateRebuilder, Rebuilder, RestorationStatus, SnapshotService, MAX_CHUNK_SIZE};
 use super::io::{SnapshotReader, LooseReader, SnapshotWriter, LooseWriter};
 
 use blockchain::BlockChain;
@@ -35,7 +35,7 @@ use service::ClientIoMessage;
 
 use io::IoChannel;
 
-use bigint::hash::H256;
+use ethereum_types::H256;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use util_error::UtilError;
 use bytes::Bytes;
@@ -130,6 +130,11 @@ impl Restoration {
 	// feeds a state chunk, aborts early if `flag` becomes false.
 	fn feed_state(&mut self, hash: H256, chunk: &[u8], flag: &AtomicBool) -> Result<(), Error> {
 		if self.state_chunks_left.contains(&hash) {
+			let expected_len = snappy::decompressed_len(chunk)?;
+			if expected_len > MAX_CHUNK_SIZE {
+				trace!(target: "snapshot", "Discarding large chunk: {} vs {}", expected_len, MAX_CHUNK_SIZE);
+				return Err(::snapshot::Error::ChunkTooLarge.into());
+			}
 			let len = snappy::decompress_into(chunk, &mut self.snappy_buffer)?;
 
 			self.state.feed(&self.snappy_buffer[..len], flag)?;
@@ -147,6 +152,11 @@ impl Restoration {
 	// feeds a block chunk
 	fn feed_blocks(&mut self, hash: H256, chunk: &[u8], engine: &EthEngine, flag: &AtomicBool) -> Result<(), Error> {
 		if self.block_chunks_left.contains(&hash) {
+			let expected_len = snappy::decompressed_len(chunk)?;
+			if expected_len > MAX_CHUNK_SIZE {
+				trace!(target: "snapshot", "Discarding large chunk: {} vs {}", expected_len, MAX_CHUNK_SIZE);
+				return Err(::snapshot::Error::ChunkTooLarge.into());
+			}
 			let len = snappy::decompress_into(chunk, &mut self.snappy_buffer)?;
 
 			self.secondary.feed(&self.snappy_buffer[..len], engine, flag)?;
@@ -623,12 +633,12 @@ mod tests {
 	use std::sync::Arc;
 	use service::ClientIoMessage;
 	use io::{IoService};
-	use devtools::RandomTempPath;
 	use tests::helpers::get_test_spec;
 	use journaldb::Algorithm;
 	use error::Error;
 	use snapshot::{ManifestData, RestorationStatus, SnapshotService};
 	use super::*;
+	use tempdir::TempDir;
 
 	struct NoopDBRestore;
 	impl DatabaseRestore for NoopDBRestore {
@@ -642,11 +652,8 @@ mod tests {
 		let service = IoService::<ClientIoMessage>::start().unwrap();
 		let spec = get_test_spec();
 
-		let dir = RandomTempPath::new();
-		let mut dir = dir.as_path().to_owned();
-		let mut client_db = dir.clone();
-		dir.push("snapshot");
-		client_db.push("client");
+		let tempdir = TempDir::new("").unwrap();
+		let dir = tempdir.path().join("snapshot");
 
 		let snapshot_params = ServiceParams {
 			engine: spec.engine.clone(),
@@ -681,11 +688,11 @@ mod tests {
 
 	#[test]
 	fn cannot_finish_with_invalid_chunks() {
-		use bigint::hash::H256;
+		use ethereum_types::H256;
 		use kvdb_rocksdb::DatabaseConfig;
 
 		let spec = get_test_spec();
-		let dir = RandomTempPath::new();
+		let tempdir = TempDir::new("").unwrap();
 
 		let state_hashes: Vec<_> = (0..5).map(|_| H256::random()).collect();
 		let block_hashes: Vec<_> = (0..5).map(|_| H256::random()).collect();
@@ -703,7 +710,7 @@ mod tests {
 				block_hash: H256::default(),
 			},
 			pruning: Algorithm::Archive,
-			db_path: dir.as_path().to_owned(),
+			db_path: tempdir.path().to_owned(),
 			db_config: &db_config,
 			writer: None,
 			genesis: &gb,

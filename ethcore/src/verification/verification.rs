@@ -23,23 +23,22 @@
 
 use std::collections::HashSet;
 
-use blockchain::*;
-use client::BlockChainClient;
-use engines::EthEngine;
-use error::{BlockError, Error};
-use header::{BlockNumber, Header};
-use transaction::SignedTransaction;
-use views::BlockView;
-
-use bigint::hash::H256;
-use bigint::prelude::U256;
 use bytes::Bytes;
+use ethereum_types::{H256, U256};
 use hash::keccak;
 use heapsize::HeapSizeOf;
 use rlp::UntrustedRlp;
 use time::get_time;
 use triehash::ordered_trie_root;
 use unexpected::{Mismatch, OutOfBounds};
+
+use blockchain::*;
+use client::BlockChainClient;
+use engines::EthEngine;
+use error::{BlockError, Error};
+use header::{BlockNumber, Header};
+use transaction::{SignedTransaction, UnverifiedTransaction};
+use views::BlockView;
 
 /// Preprocessed block data gathered in `verify_block_unordered` call
 pub struct PreverifiedBlock {
@@ -69,11 +68,9 @@ pub fn verify_block_basic(header: &Header, bytes: &[u8], engine: &EthEngine) -> 
 		verify_header_params(&u, engine, false)?;
 		engine.verify_block_basic(&u)?;
 	}
-	// Verify transactions.
-	// TODO: either use transaction views or cache the decoded transactions.
-	let v = BlockView::new(bytes);
-	for t in v.transactions() {
-		engine.verify_transaction_basic(&t, &header)?;
+
+	for t in UntrustedRlp::new(bytes).at(1)?.iter().map(|rlp| rlp.as_val::<UnverifiedTransaction>()) {
+		engine.verify_transaction_basic(&t?, &header)?;
 	}
 	Ok(())
 }
@@ -243,9 +240,10 @@ pub fn verify_block_final(expected: &Header, got: &Header) -> Result<(), Error> 
 
 /// Check basic header parameters.
 pub fn verify_header_params(header: &Header, engine: &EthEngine, is_full: bool) -> Result<(), Error> {
-	if header.seal().len() != engine.seal_fields() {
+	let expected_seal_fields = engine.seal_fields(header);
+	if header.seal().len() != expected_seal_fields {
 		return Err(From::from(BlockError::InvalidSealArity(
-			Mismatch { expected: engine.seal_fields(), found: header.seal().len() }
+			Mismatch { expected: expected_seal_fields, found: header.seal().len() }
 		)));
 	}
 
@@ -273,11 +271,20 @@ pub fn verify_header_params(header: &Header, engine: &EthEngine, is_full: bool) 
 	}
 
 	if is_full {
-		let max_time = get_time().sec as u64 + 15;
-		if header.timestamp() > max_time {
-			return Err(From::from(BlockError::InvalidTimestamp(OutOfBounds { max: Some(max_time), min: None, found: header.timestamp() })))
+		const ACCEPTABLE_DRIFT_SECS: u64 = 15;
+		let max_time = get_time().sec as u64 + ACCEPTABLE_DRIFT_SECS;
+		let invalid_threshold = max_time + ACCEPTABLE_DRIFT_SECS * 9;
+		let timestamp = header.timestamp();
+
+		if timestamp > invalid_threshold {
+			return Err(From::from(BlockError::InvalidTimestamp(OutOfBounds { max: Some(max_time), min: None, found: timestamp })))
+		}
+
+		if timestamp > max_time {
+			return Err(From::from(BlockError::TemporarilyInvalid(OutOfBounds { max: Some(max_time), min: None, found: timestamp })))
 		}
 	}
+
 	Ok(())
 }
 
@@ -311,7 +318,7 @@ fn verify_parent(header: &Header, parent: &Header, gas_limit_divisor: U256) -> R
 fn verify_block_integrity(block: &[u8], transactions_root: &H256, uncles_hash: &H256) -> Result<(), Error> {
 	let block = UntrustedRlp::new(block);
 	let tx = block.at(1)?;
-	let expected_root = &ordered_trie_root(tx.iter().map(|r| r.as_raw().to_vec())); //TODO: get rid of vectors here
+	let expected_root = &ordered_trie_root(tx.iter().map(|r| r.as_raw()));
 	if expected_root != transactions_root {
 		return Err(From::from(BlockError::InvalidTransactionsRoot(Mismatch { expected: expected_root.clone(), found: transactions_root.clone() })))
 	}
@@ -324,28 +331,23 @@ fn verify_block_integrity(block: &[u8], transactions_root: &H256, uncles_hash: &
 
 #[cfg(test)]
 mod tests {
+	use super::*;
+
 	use std::collections::{BTreeMap, HashMap};
-	use hash::keccak;
-	use bigint::prelude::U256;
-	use bigint::hash::{H256, H2048};
-	use triehash::ordered_trie_root;
-	use unexpected::{Mismatch, OutOfBounds};
-	use bytes::Bytes;
-	use ethkey::{Random, Generator};
-	use header::*;
-	use verification::*;
-	use blockchain::extras::*;
-	use error::*;
-	use error::BlockError::*;
-	use views::*;
-	use blockchain::*;
-	use engines::EthEngine;
-	use spec::*;
-	use transaction::*;
-	use tests::helpers::*;
-	use types::log_entry::{LogEntry, LocalizedLogEntry};
-	use time::get_time;
+	use ethereum_types::{H256, Bloom, U256};
+	use blockchain::{BlockDetails, TransactionAddress, BlockReceipts};
 	use encoded;
+	use hash::keccak;
+	use engines::EthEngine;
+	use error::BlockError::*;
+	use ethkey::{Random, Generator};
+	use spec::{CommonParams, Spec};
+	use tests::helpers::{create_test_block_with_data, create_test_block};
+	use time::get_time;
+	use transaction::{SignedTransaction, Transaction, UnverifiedTransaction, Action};
+	use types::log_entry::{LogEntry, LocalizedLogEntry};
+	use rlp;
+	use triehash::ordered_trie_root;
 
 	fn check_ok(result: Result<(), Error>) {
 		result.unwrap_or_else(|e| panic!("Block verification failed: {:?}", e));
@@ -359,11 +361,13 @@ mod tests {
 		}
 	}
 
-	fn check_fail_timestamp(result: Result<(), Error>) {
+	fn check_fail_timestamp(result: Result<(), Error>, temp: bool) {
+		let name = if temp { "TemporarilyInvalid" } else { "InvalidTimestamp" };
 		match result {
-			Err(Error::Block(BlockError::InvalidTimestamp(_))) => (),
-			Err(other) => panic!("Block verification failed.\nExpected: InvalidTimestamp\nGot: {:?}", other),
-			Ok(_) => panic!("Block verification failed.\nExpected: InvalidTimestamp\nGot: Ok"),
+			Err(Error::Block(BlockError::InvalidTimestamp(_))) if !temp => (),
+			Err(Error::Block(BlockError::TemporarilyInvalid(_))) if temp => (),
+			Err(other) => panic!("Block verification failed.\nExpected: {}\nGot: {:?}", name, other),
+			Ok(_) => panic!("Block verification failed.\nExpected: {}\nGot: Ok", name),
 		}
 	}
 
@@ -450,7 +454,7 @@ mod tests {
 			unimplemented!()
 		}
 
-		fn blocks_with_bloom(&self, _bloom: &H2048, _from_block: BlockNumber, _to_block: BlockNumber) -> Vec<BlockNumber> {
+		fn blocks_with_bloom(&self, _bloom: &Bloom, _from_block: BlockNumber, _to_block: BlockNumber) -> Vec<BlockNumber> {
 			unimplemented!()
 		}
 
@@ -498,7 +502,27 @@ mod tests {
 	}
 
 	#[test]
-	#[cfg_attr(feature="dev", allow(similar_names))]
+	fn test_verify_block_basic_with_invalid_transactions() {
+		let spec = Spec::new_test();
+		let engine = &*spec.engine;
+
+		let block = {
+			let mut rlp = rlp::RlpStream::new_list(3);
+			let mut header = Header::default();
+			// that's an invalid transaction list rlp
+			let invalid_transactions = vec![vec![0u8]];
+			header.set_transactions_root(ordered_trie_root(&invalid_transactions));
+			header.set_gas_limit(engine.params().min_gas_limit);
+			rlp.append(&header);
+			rlp.append_list::<Vec<u8>, _>(&invalid_transactions);
+			rlp.append_raw(&rlp::EMPTY_LIST_RLP, 1);
+			rlp.out()
+		};
+
+		assert!(basic_test(&block, engine).is_err());
+	}
+
+	#[test]
 	fn test_verify_block() {
 		use rlp::RlpStream;
 
@@ -567,7 +591,7 @@ mod tests {
 		let mut uncles_rlp = RlpStream::new();
 		uncles_rlp.append_list(&good_uncles);
 		let good_uncles_hash = keccak(uncles_rlp.as_raw());
-		let good_transactions_root = ordered_trie_root(good_transactions.iter().map(|t| ::rlp::encode::<UnverifiedTransaction>(t).into_vec()));
+		let good_transactions_root = ordered_trie_root(good_transactions.iter().map(|t| ::rlp::encode::<UnverifiedTransaction>(t)));
 
 		let mut parent = good.clone();
 		parent.set_number(9);
@@ -643,11 +667,11 @@ mod tests {
 
 		header = good.clone();
 		header.set_timestamp(2450000000);
-		check_fail_timestamp(basic_test(&create_test_block_with_data(&header, &good_transactions, &good_uncles), engine));
+		check_fail_timestamp(basic_test(&create_test_block_with_data(&header, &good_transactions, &good_uncles), engine), false);
 
 		header = good.clone();
 		header.set_timestamp(get_time().sec as u64 + 20);
-		check_fail_timestamp(basic_test(&create_test_block_with_data(&header, &good_transactions, &good_uncles), engine));
+		check_fail_timestamp(basic_test(&create_test_block_with_data(&header, &good_transactions, &good_uncles), engine), true);
 
 		header = good.clone();
 		header.set_timestamp(get_time().sec as u64 + 10);

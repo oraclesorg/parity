@@ -16,6 +16,7 @@
 
 use std::sync::Arc;
 
+use crypto::DEFAULT_MAC;
 use ethcore::account_provider::AccountProvider;
 use ethkey::{KeyPair, Signature, verify_public};
 
@@ -25,6 +26,7 @@ use v1::metadata::Metadata;
 use v1::SecretStoreClient;
 use v1::traits::secretstore::SecretStore;
 use v1::helpers::secretstore::ordered_servers_keccak;
+use v1::types::{H256, EncryptedDocumentKey};
 
 struct Dependencies {
 	pub accounts: Arc<AccountProvider>,
@@ -100,7 +102,29 @@ fn rpc_secretstore_shadow_decrypt() {
 }
 
 #[test]
-fn rpc_secretstore_sign_servers_set() {
+fn rpc_secretstore_servers_set_hash() {
+	let deps = Dependencies::new();
+	let io = deps.default_client();
+
+	// execute hashing request
+	let hashing_request = r#"{"jsonrpc": "2.0", "method": "secretstore_serversSetHash", "params":[
+		["0x843645726384530ffb0c52f175278143b5a93959af7864460f5a4fec9afd1450cfb8aef63dec90657f43f55b13e0a73c7524d4e9a13c051b4e5f1e53f39ecd91",
+		 "0x07230e34ebfe41337d3ed53b186b3861751f2401ee74b988bba55694e2a6f60c757677e194be2e53c3523cc8548694e636e6acb35c4e8fdc5e29d28679b9b2f3"]
+	], "id": 1}"#;
+	let hashing_response = io.handle_request_sync(&hashing_request).unwrap();
+	let hashing_response = hashing_response.replace(r#"{"jsonrpc":"2.0","result":"0x"#, "");
+	let hashing_response = hashing_response.replace(r#"","id":1}"#, "");
+	let hash: H256 = hashing_response.parse().unwrap();
+
+	let servers_set_keccak = ordered_servers_keccak(vec![
+		"843645726384530ffb0c52f175278143b5a93959af7864460f5a4fec9afd1450cfb8aef63dec90657f43f55b13e0a73c7524d4e9a13c051b4e5f1e53f39ecd91".parse().unwrap(),
+		"07230e34ebfe41337d3ed53b186b3861751f2401ee74b988bba55694e2a6f60c757677e194be2e53c3523cc8548694e636e6acb35c4e8fdc5e29d28679b9b2f3".parse().unwrap()
+	].into_iter().collect());
+	assert_eq!(hash, servers_set_keccak);
+}
+
+#[test]
+fn rpc_secretstore_sign_raw_hash() {
 	let deps = Dependencies::new();
 	let io = deps.default_client();
 
@@ -110,19 +134,42 @@ fn rpc_secretstore_sign_servers_set() {
 	deps.accounts.insert_account(key_pair.secret().clone(), "password").unwrap();
 
 	// execute signing request
-	let signing_request = r#"{"jsonrpc": "2.0", "method": "secretstore_signServersSet", "params":[
-		"0x00dfE63B22312ab4329aD0d28CaD8Af987A01932", "password",
-		["0x843645726384530ffb0c52f175278143b5a93959af7864460f5a4fec9afd1450cfb8aef63dec90657f43f55b13e0a73c7524d4e9a13c051b4e5f1e53f39ecd91",
-		 "0x07230e34ebfe41337d3ed53b186b3861751f2401ee74b988bba55694e2a6f60c757677e194be2e53c3523cc8548694e636e6acb35c4e8fdc5e29d28679b9b2f3"]
+	let signing_request = r#"{"jsonrpc": "2.0", "method": "secretstore_signRawHash", "params":[
+		"0x00dfE63B22312ab4329aD0d28CaD8Af987A01932", "password", "0x0000000000000000000000000000000000000000000000000000000000000001"
 	], "id": 1}"#;
 	let signing_response = io.handle_request_sync(&signing_request).unwrap();
 	let signing_response = signing_response.replace(r#"{"jsonrpc":"2.0","result":"0x"#, "");
 	let signing_response = signing_response.replace(r#"","id":1}"#, "");
 	let signature: Signature = signing_response.parse().unwrap();
 
-	let servers_set_keccak = ordered_servers_keccak(vec![
-		"843645726384530ffb0c52f175278143b5a93959af7864460f5a4fec9afd1450cfb8aef63dec90657f43f55b13e0a73c7524d4e9a13c051b4e5f1e53f39ecd91".parse().unwrap(),
-		"07230e34ebfe41337d3ed53b186b3861751f2401ee74b988bba55694e2a6f60c757677e194be2e53c3523cc8548694e636e6acb35c4e8fdc5e29d28679b9b2f3".parse().unwrap()
-	].into_iter().collect());
-	assert!(verify_public(key_pair.public(), &signature, &servers_set_keccak.into()).unwrap());
+	let hash = "0000000000000000000000000000000000000000000000000000000000000001".parse().unwrap();
+	assert!(verify_public(key_pair.public(), &signature, &hash).unwrap());
+}
+
+#[test]
+fn rpc_secretstore_generate_document_key() {
+	let deps = Dependencies::new();
+	let io = deps.default_client();
+
+	// insert new account
+	let secret = "82758356bf46b42710d3946a8efa612b7bf5e125e4d49f28facf1139db4a46f4".parse().unwrap();
+	let key_pair = KeyPair::from_secret(secret).unwrap();
+	deps.accounts.insert_account(key_pair.secret().clone(), "password").unwrap();
+
+	// execute generation request
+	let generation_request = r#"{"jsonrpc": "2.0", "method": "secretstore_generateDocumentKey", "params":[
+		"0x00dfE63B22312ab4329aD0d28CaD8Af987A01932", "password",
+		"0x843645726384530ffb0c52f175278143b5a93959af7864460f5a4fec9afd1450cfb8aef63dec90657f43f55b13e0a73c7524d4e9a13c051b4e5f1e53f39ecd91"
+	], "id": 1}"#;
+	let generation_response = io.handle_request_sync(&generation_request).unwrap();
+	let generation_response = generation_response.replace(r#"{"jsonrpc":"2.0","result":"#, "");
+	let generation_response = generation_response.replace(r#","id":1}"#, "");
+	let generation_response: EncryptedDocumentKey = serde_json::from_str(&generation_response).unwrap();
+
+	// the only thing we can check is that 'encrypted_key' can be decrypted by passed account
+	assert!(deps.accounts.decrypt(
+		"00dfE63B22312ab4329aD0d28CaD8Af987A01932".parse().unwrap(),
+		Some("password".into()),
+		&DEFAULT_MAC,
+		&generation_response.encrypted_key.0).is_ok());
 }

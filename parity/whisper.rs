@@ -51,7 +51,7 @@ impl PoolHandle for NetPoolHandle {
 	fn relay(&self, message: Message) -> bool {
 		let mut res = false;
 		let mut message = Some(message);
-		self.net.with_proto_context(whisper_net::PROTOCOL_ID, &mut move |ctx| {
+		self.net.with_proto_context(whisper_net::PROTOCOL_ID, &mut |ctx| {
 			if let Some(message) = message.take() {
 				res = self.handle.post_message(message, ctx);
 			}
@@ -92,14 +92,6 @@ pub fn setup(target_pool_size: usize, protos: &mut Vec<AttachedProtocol>)
 		packet_count: whisper_net::PACKET_COUNT,
 		versions: whisper_net::SUPPORTED_VERSIONS,
 		protocol_id: whisper_net::PROTOCOL_ID,
-	});
-
-	// parity-only extensions to whisper.
-	protos.push(AttachedProtocol {
-		handler: Arc::new(whisper_net::ParityExtensions),
-		packet_count: whisper_net::PACKET_COUNT,
-		versions: whisper_net::SUPPORTED_VERSIONS,
-		protocol_id: whisper_net::PARITY_PROTOCOL_ID,
 	});
 
 	let factory = RpcFactory { net: net, manager: manager };

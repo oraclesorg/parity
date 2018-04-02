@@ -30,9 +30,9 @@ use engines::EthEngine;
 use header::Header;
 use ids::BlockId;
 
-use bigint::prelude::U256;
-use bigint::hash::H256;
-use util::{HashDB, DBValue};
+use ethereum_types::{H256, U256};
+use hashdb::HashDB;
+use kvdb::DBValue;
 use snappy;
 use bytes::Bytes;
 use parking_lot::Mutex;
@@ -76,6 +76,11 @@ mod traits;
 
 // Try to have chunks be around 4MB (before compression)
 const PREFERRED_CHUNK_SIZE: usize = 4 * 1024 * 1024;
+
+// Maximal chunk size (decompressed)
+// Snappy::decompressed_len estimation may sometimes yield results greater
+// than PREFERRED_CHUNK_SIZE so allow some threshold here.
+const MAX_CHUNK_SIZE: usize = PREFERRED_CHUNK_SIZE / 4 * 5;
 
 // Minimum supported state chunk version.
 const MIN_SUPPORTED_STATE_CHUNK_VERSION: u64 = 1;
@@ -181,8 +186,8 @@ pub fn chunk_secondary<'a>(mut chunker: Box<SnapshotComponents>, chain: &'a Bloc
 			let size = compressed.len();
 
 			writer.lock().write_block_chunk(hash, compressed)?;
-			trace!(target: "snapshot", "wrote secondary chunk. hash: {}, size: {}, uncompressed size: {}",
-				hash.hex(), size, raw_data.len());
+			trace!(target: "snapshot", "wrote secondary chunk. hash: {:x}, size: {}, uncompressed size: {}",
+				hash, size, raw_data.len());
 
 			progress.size.fetch_add(size, Ordering::SeqCst);
 			chunk_hashes.push(hash);

@@ -5,7 +5,7 @@ use vm::tests::FakeExt;
 use std::io::{self, Read};
 use std::{fs, path, fmt};
 use std::sync::Arc;
-use ethcore_bigint::prelude::{U256, H256, H160};
+use ethereum_types::{U256, H256, H160};
 use rustc_hex::ToHex;
 
 fn load_code<P: AsRef<path::Path>>(p: P) -> io::Result<Vec<u8>> {
@@ -16,7 +16,7 @@ fn load_code<P: AsRef<path::Path>>(p: P) -> io::Result<Vec<u8>> {
 }
 
 fn wasm_interpreter() -> WasmInterpreter {
-	WasmInterpreter::new().expect("wasm interpreter to create without errors")
+	WasmInterpreter
 }
 
 #[derive(Debug)]

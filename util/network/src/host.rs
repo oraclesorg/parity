@@ -18,9 +18,9 @@ use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::ops::*;
-use std::cmp::min;
+use std::cmp::{min, max};
 use std::path::{Path, PathBuf};
 use std::io::{Read, Write, self};
 use std::fs;
@@ -29,7 +29,7 @@ use hash::keccak;
 use mio::*;
 use mio::deprecated::{EventLoop};
 use mio::tcp::*;
-use bigint::hash::*;
+use ethereum_types::H256;
 use rlp::*;
 use session::{Session, SessionInfo, SessionData};
 use io::*;
@@ -383,7 +383,6 @@ pub struct Host {
 	timer_counter: RwLock<usize>,
 	stats: Arc<NetworkStats>,
 	reserved_nodes: RwLock<HashSet<NodeId>>,
-	num_sessions: AtomicUsize,
 	stopping: AtomicBool,
 	filter: Option<Arc<ConnectionFilter>>,
 }
@@ -440,7 +439,6 @@ impl Host {
 			timer_counter: RwLock::new(USER_TIMER),
 			stats: stats,
 			reserved_nodes: RwLock::new(HashSet::new()),
-			num_sessions: AtomicUsize::new(0),
 			stopping: AtomicBool::new(false),
 			filter: filter,
 		};
@@ -495,7 +493,7 @@ impl Host {
 				// disconnect all non-reserved peers here.
 				let reserved: HashSet<NodeId> = self.reserved_nodes.read().clone();
 				let mut to_kill = Vec::new();
-				for e in self.sessions.write().iter_mut() {
+				for e in self.sessions.read().iter() {
 					let mut s = e.lock();
 					{
 						let id = s.id();
@@ -535,7 +533,7 @@ impl Host {
 	pub fn stop(&self, io: &IoContext<NetworkIoMessage>) -> Result<(), Error> {
 		self.stopping.store(true, AtomicOrdering::Release);
 		let mut to_kill = Vec::new();
-		for e in self.sessions.write().iter_mut() {
+		for e in self.sessions.read().iter() {
 			let mut s = e.lock();
 			s.disconnect(io, DisconnectReason::ClientQuit);
 			to_kill.push(s.token());
@@ -605,8 +603,8 @@ impl Host {
 		};
 
 		if let Some(mut discovery) = discovery {
-			discovery.init_node_list(self.nodes.read().unordered_entries());
-			discovery.add_node_list(self.nodes.read().unordered_entries());
+			discovery.init_node_list(self.nodes.read().entries());
+			discovery.add_node_list(self.nodes.read().entries());
 			*self.discovery.lock() = Some(discovery);
 			io.register_stream(DISCOVERY)?;
 			io.register_timer(DISCOVERY_REFRESH, DISCOVERY_REFRESH_TIMEOUT)?;
@@ -626,22 +624,28 @@ impl Host {
 		self.sessions.read().iter().any(|e| e.lock().info.id == Some(id.clone()))
 	}
 
-	fn session_count(&self) -> usize {
-		self.num_sessions.load(AtomicOrdering::Relaxed)
+	// returns (handshakes, egress, ingress)
+	fn session_count(&self) -> (usize, usize, usize) {
+		let mut handshakes = 0;
+		let mut egress = 0;
+		let mut ingress = 0;
+		for s in self.sessions.read().iter() {
+			match s.try_lock() {
+				Some(ref s) if s.is_ready() && s.info.originated => egress += 1,
+				Some(ref s) if s.is_ready() && !s.info.originated => ingress += 1,
+				_ => handshakes +=1,
+			}
+		}
+		(handshakes, egress, ingress)
 	}
 
 	fn connecting_to(&self, id: &NodeId) -> bool {
 		self.sessions.read().iter().any(|e| e.lock().id() == Some(id))
 	}
 
-	fn handshake_count(&self) -> usize {
-		// session_count < total_count is possible because of the data race.
-		self.sessions.read().count().saturating_sub(self.session_count())
-	}
-
 	fn keep_alive(&self, io: &IoContext<NetworkIoMessage>) {
 		let mut to_kill = Vec::new();
-		for e in self.sessions.write().iter_mut() {
+		for e in self.sessions.read().iter() {
 			let mut s = e.lock();
 			if !s.keep_alive(io) {
 				s.disconnect(io, DisconnectReason::PingTimeout);
@@ -665,9 +669,9 @@ impl Host {
 			(config.min_peers, config.non_reserved_mode == NonReservedPeerMode::Deny, config.max_handshakes as usize, config.ip_filter.clone(), info.id().clone())
 		};
 
-		let session_count = self.session_count();
+		let (handshake_count, egress_count, ingress_count) = self.session_count();
 		let reserved_nodes = self.reserved_nodes.read();
-		if session_count >= min_peers as usize + reserved_nodes.len() {
+		if egress_count + ingress_count >= min_peers as usize + reserved_nodes.len() {
 			// check if all pinned nodes are connected.
 			if reserved_nodes.iter().all(|n| self.have_session(n) && self.connecting_to(n)) {
 				return;
@@ -677,7 +681,6 @@ impl Host {
 			pin = true;
 		}
 
-		let handshake_count = self.handshake_count();
 		// allow 16 slots for incoming connections
 		if handshake_count >= max_handshakes {
 			return;
@@ -702,10 +705,9 @@ impl Host {
 			self.connect_peer(&id, io);
 			started += 1;
 		}
-		debug!(target: "network", "Connecting peers: {} sessions, {} pending, {} started", self.session_count(), self.handshake_count(), started);
+		debug!(target: "network", "Connecting peers: {} sessions, {} pending + {} started", egress_count + ingress_count, handshake_count, started);
 	}
 
-	#[cfg_attr(feature="dev", allow(single_match))]
 	fn connect_peer(&self, id: &NodeId, io: &IoContext<NetworkIoMessage>) {
 		if self.have_session(id) {
 			trace!(target: "network", "Aborted connect. Node already connected.");
@@ -720,7 +722,7 @@ impl Host {
 			let address = {
 				let mut nodes = self.nodes.write();
 				if let Some(node) = nodes.get_mut(id) {
-					node.last_attempted = Some(::time::now());
+					node.attempts += 1;
 					node.endpoint.address
 				}
 				else {
@@ -739,12 +741,12 @@ impl Host {
 				}
 			}
 		};
+
 		if let Err(e) = self.create_connection(socket, Some(id), io) {
 			debug!(target: "network", "Can't create connection: {:?}", e);
 		}
 	}
 
-	#[cfg_attr(feature="dev", allow(block_in_if_condition_stmt))]
 	fn create_connection(&self, socket: TcpStream, id: Option<&NodeId>, io: &IoContext<NetworkIoMessage>) -> Result<(), Error> {
 		let nonce = self.info.write().next_nonce();
 		let mut sessions = self.sessions.write();
@@ -805,7 +807,6 @@ impl Host {
 		self.kill_connection(token, io, true);
 	}
 
-	#[cfg_attr(feature="dev", allow(collapsible_if))]
 	fn session_readable(&self, token: StreamToken, io: &IoContext<NetworkIoMessage>) {
 		let mut ready_data: Vec<ProtocolId> = Vec::new();
 		let mut packet_data: Vec<(ProtocolId, PacketId, Vec<u8>)> = Vec::new();
@@ -814,11 +815,11 @@ impl Host {
 		let mut ready_id = None;
 		if let Some(session) = session.clone() {
 			{
-				let mut s = session.lock();
 				loop {
-					let session_result = s.readable(io, &self.info.read());
+					let session_result = session.lock().readable(io, &self.info.read());
 					match session_result {
 						Err(e) => {
+							let s = session.lock();
 							trace!(target: "network", "Session read error: {}:{:?} ({:?}) {:?}", token, s.id(), s.remote_addr(), e);
 							if let ErrorKind::Disconnect(DisconnectReason::IncompatibleProtocol) = *e.kind() {
 								if let Some(id) = s.id() {
@@ -831,9 +832,9 @@ impl Host {
 							break;
 						},
 						Ok(SessionData::Ready) => {
-							self.num_sessions.fetch_add(1, AtomicOrdering::SeqCst);
-							let session_count = self.session_count();
-							let (min_peers, max_peers, reserved_only, self_id) = {
+							let (_, egress_count, ingress_count) = self.session_count();
+							let mut s = session.lock();
+							let (min_peers, mut max_peers, reserved_only, self_id) = {
 								let info = self.info.read();
 								let mut max_peers = info.config.max_peers;
 								for cap in s.info.capabilities.iter() {
@@ -845,12 +846,17 @@ impl Host {
 								(info.config.min_peers as usize, max_peers as usize, info.config.non_reserved_mode == NonReservedPeerMode::Deny, info.id().clone())
 							};
 
+							max_peers = max(max_peers, min_peers);
+
 							let id = s.id().expect("Ready session always has id").clone();
 
-							// Check for the session limit. session_counts accounts for the new session.
+							// Check for the session limit.
+							// Outgoing connections are allowed as long as their count is <= min_peers
+							// Incoming connections are allowed to take all of the max_peers reserve, or at most half of the slots.
+							let max_ingress = max(max_peers - min_peers, min_peers / 2);
 							if reserved_only ||
-								(s.info.originated && session_count > min_peers) ||
-								(!s.info.originated && session_count > max_peers) {
+								(s.info.originated && egress_count > min_peers) ||
+								(!s.info.originated && ingress_count > max_ingress) {
 								// only proceed if the connecting peer is reserved.
 								if !self.reserved_nodes.read().contains(&id) {
 									s.disconnect(io, DisconnectReason::TooManyPeers);
@@ -954,13 +960,12 @@ impl Host {
 		let mut deregister = false;
 		let mut expired_session = None;
 		if let FIRST_SESSION ... LAST_SESSION = token {
-			let sessions = self.sessions.write();
+			let sessions = self.sessions.read();
 			if let Some(session) = sessions.get(token).cloned() {
 				expired_session = Some(session.clone());
 				let mut s = session.lock();
 				if !s.expired() {
 					if s.is_ready() {
-						self.num_sessions.fetch_sub(1, AtomicOrdering::SeqCst);
 						for (p, _) in self.handlers.read().iter() {
 							if s.have_capability(*p)  {
 								to_disconnect.push(*p);
@@ -992,7 +997,7 @@ impl Host {
 	fn update_nodes(&self, _io: &IoContext<NetworkIoMessage>, node_changes: TableUpdates) {
 		let mut to_remove: Vec<PeerId> = Vec::new();
 		{
-			let sessions = self.sessions.write();
+			let sessions = self.sessions.read();
 			for c in sessions.iter() {
 				let s = c.lock();
 				if let Some(id) = s.id() {
@@ -1284,4 +1289,3 @@ fn host_client_url() {
 	let host: Host = Host::new(config, Arc::new(NetworkStats::new()), None).unwrap();
 	assert!(host.local_url().starts_with("enode://101b3ef5a4ea7a1c7928e24c4c75fd053c235d7b80c22ae5c03d145d0ac7396e2a4ffff9adee3133a7b05044a5cee08115fd65145e5165d646bde371010d803c@"));
 }
-
