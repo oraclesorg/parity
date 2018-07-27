@@ -33,6 +33,7 @@ use ethcore::snapshot::service::{Service as SnapshotService, ServiceParams as Sn
 use ethcore::snapshot::{SnapshotService as _SnapshotService, RestorationStatus};
 use ethcore::spec::Spec;
 use ethcore::account_provider::AccountProvider;
+use ethcore::hbbft::{HbbftConfig, HbbftDaemon};
 
 use ethcore_private_tx::{self, Importer};
 use Error;
@@ -84,6 +85,7 @@ pub struct ClientService {
 	private_tx: Arc<PrivateTxService>,
 	database: Arc<BlockChainDB>,
 	_stop_guard: StopGuard,
+	_hbbftd: Option<HbbftDaemon>,
 }
 
 impl ClientService {
@@ -99,6 +101,7 @@ impl ClientService {
 		account_provider: Arc<AccountProvider>,
 		encryptor: Box<ethcore_private_tx::Encryptor>,
 		private_tx_conf: ethcore_private_tx::ProviderConfig,
+		hbbft_conf: Option<&HbbftConfig>,
 		) -> Result<ClientService, Error>
 	{
 		let io_service = IoService::<ClientIoMessage>::start()?;
@@ -141,6 +144,11 @@ impl ClientService {
 
 		let stop_guard = StopGuard::new();
 
+		let _hbbftd = match hbbft_conf {
+			Some(cfg) => Some(HbbftDaemon::new(client.clone(), cfg).map_err(|err| err.to_string())?),
+			None => None,
+		};
+
 		Ok(ClientService {
 			io_service: Arc::new(io_service),
 			client: client,
@@ -148,6 +156,7 @@ impl ClientService {
 			private_tx,
 			database: blockchain_db,
 			_stop_guard: stop_guard,
+			_hbbftd,
 		})
 	}
 
@@ -308,6 +317,7 @@ mod tests {
 			Arc::new(AccountProvider::transient_provider()),
 			Box::new(ethcore_private_tx::NoopEncryptor),
 			Default::default(),
+			None,
 		);
 		assert!(service.is_ok());
 		drop(service.unwrap());
