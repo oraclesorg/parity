@@ -22,12 +22,14 @@ use std::thread;
 use ansi_term::Colour;
 use bytes::Bytes;
 use ethcore::account_provider::{AccountProvider, AccountProviderSettings};
-use ethcore::client::{BlockId, CallContract, Client, Mode, DatabaseCompactionProfile, VMType, BlockChainClient, BlockInfo};
+use ethcore::client::{BlockId, CallContract, Client, Mode, DatabaseCompactionProfile, VMType, BlockChainClient,
+	BlockInfo};
 use ethcore::ethstore::ethkey;
 use ethcore::miner::{stratum, Miner, MinerService, MinerOptions};
 use ethcore::snapshot::{self, SnapshotConfiguration};
 use ethcore::spec::{SpecParams, OptimizeFor};
 use ethcore::verification::queue::VerifierSettings;
+use ethcore::hbbft::HbbftConfig;
 use ethcore_logger::{Config as LogConfig, RotatingLogger};
 use ethcore_service::ClientService;
 use ethereum_types::Address;
@@ -136,6 +138,7 @@ pub struct RunCmd {
 	pub no_hardcoded_sync: bool,
 	pub on_demand_retry_count: Option<usize>,
 	pub on_demand_inactive_time_limit: Option<u64>,
+	pub hbbft: HbbftConfig,
 }
 
 // node info fetcher for the local store.
@@ -477,9 +480,12 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 	// prepare account provider
 	let account_provider = Arc::new(prepare_account_provider(&cmd.spec, &cmd.dirs, &spec.data_dir, cmd.acc_conf, &passwords)?);
 
+	// TODO: Remove: Superseded by `Runtime`.
 	let cpu_pool = CpuPool::new(4);
 
 	// spin up event loop
+	//
+	// TODO: Remove: Superseded by `Runtime`.
 	let event_loop = EventLoop::spawn();
 
 	// fetch service
@@ -572,6 +578,7 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 		account_provider.clone(),
 		Box::new(SecretStoreEncryptor::new(cmd.private_encryptor_conf, fetch.clone()).map_err(|e| e.to_string())?),
 		cmd.private_provider_conf,
+		Some(&cmd.hbbft),
 	).map_err(|e| format!("Client service error: {:?}", e))?;
 
 	let connection_filter_address = spec.params().node_permission_contract;
@@ -820,7 +827,8 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 			informant,
 			client,
 			client_service: Arc::new(service),
-			keep_alive: Box::new((watcher, updater, ws_server, http_server, ipc_server, secretstore_key_server, ipfs_server, event_loop)),
+			keep_alive: Box::new((watcher, updater, ws_server, http_server, ipc_server, secretstore_key_server,
+				ipfs_server, event_loop)),
 		}
 	})
 }
@@ -893,6 +901,7 @@ impl RunningClient {
 				// drop this stuff as soon as exit detected.
 				drop(rpc);
 				drop(keep_alive);
+
 				// to make sure timer does not spawn requests while shutdown is in progress
 				informant.shutdown();
 				// just Arc is dropping here, to allow other reference release in its default time

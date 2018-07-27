@@ -18,12 +18,14 @@
 
 extern crate futures;
 extern crate tokio_core;
+pub extern crate tokio;
 
 use std::{fmt, thread};
 use std::sync::mpsc;
 use std::time::Duration;
 use futures::{Future, IntoFuture};
 pub use tokio_core::reactor::{Remote as TokioRemote, Handle, Timeout};
+pub use tokio::runtime::{Runtime, TaskExecutor};
 
 /// Event Loop for futures.
 /// Wrapper around `tokio::reactor::Core`.
