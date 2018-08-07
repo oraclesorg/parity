@@ -1,4 +1,4 @@
-## Parity-Ethereum - a fast, light, and robust EVM and WASM blockchain client
+## Parity-Ethereum - a fast, light, and robust EVM and WASM blockchain client.
 
 ### [» Download the latest release «](https://github.com/paritytech/parity-ethereum/releases/latest)
 
