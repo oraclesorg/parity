@@ -23,14 +23,13 @@ extern crate log;
 
 #[macro_use]
 extern crate futures;
-
+extern crate bytes;
 extern crate hyper;
 extern crate hyper_rustls;
 
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_timer;
 extern crate url;
-extern crate bytes;
 
 /// Fetch client implementation.
 pub mod client;

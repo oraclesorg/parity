@@ -17,10 +17,11 @@
 use futures::future::{self, Loop};
 use futures::sync::{mpsc, oneshot};
 use futures::{self, Future, Async, Sink, Stream};
-use hyper::header::{UserAgent, Location, ContentLength, ContentType};
-use hyper::mime::Mime;
-use hyper::{self, Method, StatusCode};
+use hyper::header::{LOCATION, CONTENT_LENGTH, CONTENT_TYPE, HeaderValue};
+use hyper::StatusCode;
+use hyper::{self, Method};
 use hyper_rustls;
+use bytes::Bytes;
 use std;
 use std::cmp::min;
 use std::sync::Arc;
@@ -29,10 +30,9 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::thread;
 use std::time::Duration;
 use std::{io, fmt};
-use tokio_core::reactor;
+use tokio;
 use tokio_timer::{self, Timer};
 use url::{self, Url};
-use bytes::Bytes;
 
 const MAX_SIZE: usize = 64 * 1024 * 1024;
 const MAX_SECS: Duration = Duration::from_secs(5);
@@ -201,19 +201,13 @@ impl Client {
 
 	fn background_thread(tx_start: TxStartup, rx_proto: mpsc::Receiver<ChanItem>) -> io::Result<thread::JoinHandle<()>> {
 		thread::Builder::new().name("fetch".into()).spawn(move || {
-			let mut core = match reactor::Core::new() {
-				Ok(c) => c,
-				Err(e) => return tx_start.send(Err(e)).unwrap_or(())
-			};
+			let https_connector= hyper_rustls::HttpsConnector::new(4);
+			let hyper = hyper::Client::builder().build(https_connector);
 
-			let handle = core.handle();
-			let hyper = hyper::Client::configure()
-				.connector(hyper_rustls::HttpsConnector::new(4, &core.handle()))
-				.build(&core.handle());
 
 			let future = rx_proto.take_while(|item| Ok(item.is_some()))
 				.map(|item| item.expect("`take_while` is only passing on channel items != None; qed"))
-				.for_each(|(request, abort, sender)|
+				.for_each(move |(request, abort, sender)|
 			{
 				trace!(target: "fetch", "new request to {}", request.url());
 				if abort.is_aborted() {
@@ -241,13 +235,20 @@ impl Client {
 									request2.set_url(next_url);
 									request2
 								} else {
-									Request::new(next_url, Method::Get)
+									Request::new(next_url, Method::GET)
 								};
 								Ok(Loop::Continue((client, request, abort, redirects + 1)))
 							} else {
-								let content_len = resp.headers.get::<ContentLength>().cloned();
-								if content_len.map(|n| *n > abort.max_size() as u64).unwrap_or(false) {
-									return Err(Error::SizeLimit)
+								{
+									if let Some(ref header_value) = resp.headers.get(CONTENT_LENGTH) {
+										let content_len = header_value
+											.to_str().map_err(|e| Error::ContentLengthToStrFailed(e))?
+											.parse::<u64>().map_err(|e| Error::ContentLengthParseFailed(e))?;
+
+										if content_len > abort.max_size() as u64 {
+											return Err(Error::SizeLimit)
+										}
+									}
 								}
 								Ok(Loop::Break(resp))
 							}
@@ -256,7 +257,7 @@ impl Client {
 					.then(|result| {
 						future::ok(sender.send(result).unwrap_or(()))
 					});
-				handle.spawn(fut);
+				tokio::spawn(fut);
 				trace!(target: "fetch", "waiting for next request ...");
 				future::ok(())
 			});
@@ -264,9 +265,7 @@ impl Client {
 			tx_start.send(Ok(())).unwrap_or(());
 
 			debug!(target: "fetch", "processing requests ...");
-			if let Err(()) = core.run(future) {
-				error!(target: "fetch", "error while executing future")
-			}
+			tokio::run(future);
 			debug!(target: "fetch", "fetch background thread finished")
 		})
 	}
@@ -315,19 +314,21 @@ impl Fetch for Client {
 
 // Extract redirect location from response. The second return value indicate whether the original method should be preserved.
 fn redirect_location(u: Url, r: &Response) -> Option<(Url, bool)> {
-	use hyper::StatusCode::*;
+	use hyper::StatusCode;
+
 	let preserve_method = match r.status() {
-		TemporaryRedirect | PermanentRedirect => true,
+		StatusCode::TEMPORARY_REDIRECT | StatusCode::PERMANENT_REDIRECT => true,
 		_ => false,
 	};
 	match r.status() {
-		MovedPermanently
-		| PermanentRedirect
-		| TemporaryRedirect
-		| Found
-		| SeeOther => {
-			if let Some(loc) = r.headers.get::<Location>() {
-				u.join(loc).ok().map(|url| (url, preserve_method))
+		StatusCode::MOVED_PERMANENTLY
+		| StatusCode::PERMANENT_REDIRECT
+		| StatusCode::TEMPORARY_REDIRECT
+		| StatusCode::FOUND
+		| StatusCode::SEE_OTHER => {
+			// TODO: Handle unwrap
+			if let Some(loc) = r.headers.get(LOCATION) {
+				u.join(loc.to_str().unwrap()).ok().map(|url| (url, preserve_method))
 			} else {
 				None
 			}
@@ -341,8 +342,8 @@ fn redirect_location(u: Url, r: &Response) -> Option<(Url, bool)> {
 pub struct Request {
 	url: Url,
 	method: Method,
-	headers: hyper::Headers,
-	body: Bytes,
+	headers: hyper::header::HeaderMap,
+	body: Bytes
 }
 
 impl Request {
@@ -350,19 +351,19 @@ impl Request {
 	pub fn new(url: Url, method: Method) -> Request {
 		Request {
 			url, method,
-			headers: hyper::Headers::new(),
+			headers: hyper::header::HeaderMap::new(),
 			body: Default::default(),
 		}
 	}
 
 	/// Create a new GET request.
 	pub fn get(url: Url) -> Request {
-		Request::new(url, Method::Get)
+		Request::new(url, Method::GET)
 	}
 
 	/// Create a new empty POST request.
 	pub fn post(url: Url) -> Request {
-		Request::new(url, Method::Post)
+		Request::new(url, Method::POST)
 	}
 
 	/// Read the url.
@@ -371,12 +372,12 @@ impl Request {
 	}
 
 	/// Read the request headers.
-	pub fn headers(&self) -> &hyper::Headers {
+	pub fn headers(&self) -> &hyper::header::HeaderMap {
 		&self.headers
 	}
 
 	/// Get a mutable reference to the headers.
-	pub fn headers_mut(&mut self) -> &mut hyper::Headers {
+	pub fn headers_mut(&mut self) -> &mut hyper::header::HeaderMap {
 		&mut self.headers
 	}
 
@@ -391,8 +392,8 @@ impl Request {
 	}
 
 	/// Consume self, and return it with the added given header.
-	pub fn with_header<H: hyper::header::Header>(mut self, value: H) -> Self {
-		self.headers_mut().set(value);
+	pub fn with_header(mut self, name: hyper::header::HeaderName, value: hyper::header::HeaderValue) -> Self {
+		self.headers_mut().append(name, value);
 		self
 	}
 
@@ -403,16 +404,15 @@ impl Request {
 	}
 }
 
-impl Into<hyper::Request> for Request {
-	fn into(mut self) -> hyper::Request {
-		let uri = self.url.as_ref().parse().expect("Every valid URLis also a URI.");
-		let mut req = hyper::Request::new(self.method, uri);
-
-		self.headers.set(UserAgent::new("Parity Fetch Neo"));
-		*req.headers_mut() = self.headers;
-		req.set_body(self.body);
-
-		req
+impl From<Request> for hyper::Request<hyper::Body> {
+	fn from(req: Request) -> hyper::Request<hyper::Body> {
+		let uri: hyper::Uri = req.url.as_ref().parse().expect("Every valid URLis also a URI.");
+		hyper::Request::builder()
+			.method(req.method)
+			.uri(uri)
+			.header(hyper::header::USER_AGENT, HeaderValue::from_static("Parity Fetch Neo"))
+			.body(req.body.into())
+			.expect("Header, uri, method, and body are already valid and can not fail to parse; qed")
 	}
 }
 
@@ -421,20 +421,20 @@ impl Into<hyper::Request> for Request {
 pub struct Response {
 	url: Url,
 	status: StatusCode,
-	headers: hyper::Headers,
-	body: hyper::Body,
+	headers: hyper::header::HeaderMap,
+	body: hyper::body::Body,
 	abort: Abort,
 	nread: usize,
 }
 
 impl Response {
 	/// Create a new response, wrapping a hyper response.
-	pub fn new(u: Url, r: hyper::Response, a: Abort) -> Response {
+	pub fn new(u: Url, r: hyper::Response<hyper::body::Body>, a: Abort) -> Response {
 		Response {
 			url: u,
 			status: r.status(),
 			headers: r.headers().clone(),
-			body: r.body(),
+			body: r.into_body(),
 			abort: a,
 			nread: 0,
 		}
@@ -447,26 +447,26 @@ impl Response {
 
 	/// Status code == OK (200)?
 	pub fn is_success(&self) -> bool {
-		self.status() == StatusCode::Ok
+		self.status() == StatusCode::OK
 	}
 
 	/// Status code == 404.
 	pub fn is_not_found(&self) -> bool {
-		self.status() == StatusCode::NotFound
+		self.status() == StatusCode::NOT_FOUND
 	}
 
 	/// Is the content-type text/html?
 	pub fn is_html(&self) -> bool {
 		if let Some(ref mime) = self.content_type() {
-			mime.type_() == "text" && mime.subtype() == "html"
+			mime == "text/html"
 		} else {
 			false
 		}
 	}
 
-	/// The conten-type header value.
-	pub fn content_type(&self) -> Option<Mime> {
-		self.headers.get::<ContentType>().map(|ct| ct.0.clone())
+	/// The content-type header value.
+	pub fn content_type(&self) -> Option<HeaderValue> {
+		self.headers.get(CONTENT_TYPE).map(|r| r.clone())
 	}
 }
 
@@ -578,6 +578,10 @@ pub enum Error {
 	SizeLimit,
 	/// The background processing thread does not run.
 	BackgroundThreadDead,
+	/// The CONTENT_LENGTH header could not be converted to a number
+	ContentLengthParseFailed(std::num::ParseIntError),
+	/// The CONTENT_LENGTH header could not be converted to a string by hyper
+	ContentLengthToStrFailed(hyper::header::ToStrError),
 }
 
 impl fmt::Display for Error {
@@ -587,11 +591,13 @@ impl fmt::Display for Error {
 			Error::Hyper(ref e) => write!(fmt, "{}", e),
 			Error::Url(ref e) => write!(fmt, "{}", e),
 			Error::Io(ref e) => write!(fmt, "{}", e),
-			Error::BackgroundThreadDead => write!(fmt, "background thread gond"),
+			Error::BackgroundThreadDead => write!(fmt, "background thread gone"),
 			Error::TooManyRedirects => write!(fmt, "too many redirects"),
 			Error::Timer(ref e) => write!(fmt, "{}", e),
 			Error::Timeout => write!(fmt, "request timed out"),
 			Error::SizeLimit => write!(fmt, "size limit reached"),
+			Error::ContentLengthParseFailed(ref e) => write!(fmt, "{}", e),
+			Error::ContentLengthToStrFailed(ref e) => write!(fmt, "{}", e),
 		}
 	}
 }
@@ -626,34 +632,79 @@ impl<F> From<tokio_timer::TimeoutError<F>> for Error {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use futures::future;
-	use futures::sync::mpsc;
-	use hyper::StatusCode;
-	use hyper::server::{Http, Request, Response, Service};
-	use tokio_timer::Timer;
-	use std;
-	use std::io::Read;
+	use hyper::{Response, StatusCode, Body, Server};
+	use hyper::service::service_fn_ok;
 	use std::net::SocketAddr;
 
-	const ADDRESS: &str = "127.0.0.1:0";
+	const ADDRESS: &str = "127.0.0.1:8080";
+	fn start_test_server() {
+		std::thread::spawn(|| {
+		let new_service = || {
+			service_fn_ok(|r| {
+				let mut response = Response::new(Body::empty());
+				match r.uri().path() {
+					"/" => {
+						let body = hyper::Body::from(r.uri().query().unwrap_or("").to_string());
+						*response.body_mut() = body;
+						*response.status_mut() = StatusCode::OK;
+					}
+					"/redirect" => {
+						*response.status_mut() = StatusCode::MOVED_PERMANENTLY;
+						let hv = HeaderValue::from_str(r.uri().query().unwrap_or("/")).unwrap();
+						response.headers_mut().insert("LOCATION", hv);
+					}
+					"/loop" => {
+						*response.status_mut() = StatusCode::MOVED_PERMANENTLY;
+						let hv = HeaderValue::from_str("/loop").unwrap();
+						response.headers_mut().insert("LOCATION", hv);
+					}
+					"/delay" => {
+						let d = Duration::from_secs(r.uri().query().unwrap_or("0").parse().unwrap());
+						std::thread::sleep(d);
+						*response.body_mut() = Body::empty();
+					}
+					_ => {
+						*response.status_mut() = StatusCode::NOT_FOUND;
+					}
+				};
+				return response;
+			})
+		};
+
+		let addr: SocketAddr = ADDRESS.parse().unwrap();
+
+		let server = Server::try_bind(&addr);
+		if !server.is_ok() {
+			return;
+		}
+		let server = server.unwrap().serve(new_service).map_err(|e| eprintln!("server error: {}", e));
+		hyper::rt::run(server);
+	});
+	}
 
 	#[test]
 	fn it_should_fetch() {
-		let server = TestServer::run();
+		start_test_server();
 		let client = Client::new().unwrap();
-		let future = client.get(&format!("http://{}?123", server.addr()), Default::default());
-		let resp = future.wait().unwrap();
-		assert!(resp.is_success());
-		let body = resp.concat2().wait().unwrap();
-		assert_eq!(&body[..], b"123")
+		let mut runtime = tokio::runtime::Runtime::new().unwrap();
+		let f = client.get(&format!("http://{}?123", ADDRESS), Default::default());
+		let resp = runtime.block_on(f);
+		let resp = resp.unwrap();
+		let body = runtime.block_on(resp.concat2());
+		assert!(body.is_ok());
+		let body = body.unwrap();
+		assert_eq!(&body[..], b"123");
+		runtime.shutdown_now();
 	}
 
 	#[test]
 	fn it_should_timeout() {
-		let server = TestServer::run();
+		start_test_server();
 		let client = Client::new().unwrap();
 		let abort = Abort::default().with_max_duration(Duration::from_secs(1));
-		match client.get(&format!("http://{}/delay?3", server.addr()), abort).wait() {
+		let mut runtime = tokio::runtime::Runtime::new().unwrap();
+		let f = client.get(&format!("http://{}/delay?3", ADDRESS), abort);
+		match runtime.block_on(f) {
 			Err(Error::Timeout) => {}
 			other => panic!("expected timeout, got {:?}", other)
 		}
@@ -661,138 +712,78 @@ mod test {
 
 	#[test]
 	fn it_should_follow_redirects() {
-		let server = TestServer::run();
+		start_test_server();
 		let client = Client::new().unwrap();
 		let abort = Abort::default();
-		let future = client.get(&format!("http://{}/redirect?http://{}/", server.addr(), server.addr()), abort);
-		assert!(future.wait().unwrap().is_success())
+		let mut runtime = tokio::runtime::Runtime::new().unwrap();
+		let f = client.get(&format!("http://{}/redirect?http://{}/", ADDRESS, ADDRESS), abort);
+		let result = runtime.block_on(f);
+		assert!(result.is_ok());
+		runtime.shutdown_now();
 	}
 
 	#[test]
 	fn it_should_follow_relative_redirects() {
-		let server = TestServer::run();
+		start_test_server();
 		let client = Client::new().unwrap();
 		let abort = Abort::default().with_max_redirects(4);
-		let future = client.get(&format!("http://{}/redirect?/", server.addr()), abort);
-		assert!(future.wait().unwrap().is_success())
+		let mut runtime = tokio::runtime::Runtime::new().unwrap();
+		let f = client.get(&format!("http://{}/redirect?/", ADDRESS), abort);
+		let result = runtime.block_on(f);
+		assert!(result.is_ok());
+		runtime.shutdown_now();
 	}
 
 	#[test]
 	fn it_should_not_follow_too_many_redirects() {
-		let server = TestServer::run();
+		start_test_server();
 		let client = Client::new().unwrap();
 		let abort = Abort::default().with_max_redirects(3);
-		match client.get(&format!("http://{}/loop", server.addr()), abort).wait() {
+		let mut runtime = tokio::runtime::Runtime::new().unwrap();
+		let f = client.get(&format!("http://{}/loop", ADDRESS), abort);
+		let result = runtime.block_on(f);
+		match result {
 			Err(Error::TooManyRedirects) => {}
 			other => panic!("expected too many redirects error, got {:?}", other)
 		}
+		runtime.shutdown_now();
 	}
 
 	#[test]
 	fn it_should_read_data() {
-		let server = TestServer::run();
+		start_test_server();
 		let client = Client::new().unwrap();
 		let abort = Abort::default();
-		let future = client.get(&format!("http://{}?abcdefghijklmnopqrstuvwxyz", server.addr()), abort);
-		let resp = future.wait().unwrap();
-		assert!(resp.is_success());
-		assert_eq!(&resp.concat2().wait().unwrap()[..], b"abcdefghijklmnopqrstuvwxyz")
+		let mut runtime = tokio::runtime::Runtime::new().unwrap();
+		let f = client.get(&format!("http://{}?abcdefghijklmnopqrstuvwxyz", ADDRESS), abort);
+		let result = runtime.block_on(f);
+		assert!(result.is_ok());
+		let result = result.unwrap();
+		let body = runtime.block_on(result.concat2());
+		assert!(body.is_ok());
+		let body = body.unwrap();
+		assert_eq!(&body[..], b"abcdefghijklmnopqrstuvwxyz");
+		runtime.shutdown_now();
 	}
 
 	#[test]
 	fn it_should_not_read_too_much_data() {
-		let server = TestServer::run();
+		start_test_server();
 		let client = Client::new().unwrap();
 		let abort = Abort::default().with_max_size(3);
-		let resp = client.get(&format!("http://{}/?1234", server.addr()), abort).wait().unwrap();
-		assert!(resp.is_success());
-		match resp.concat2().wait() {
-			Err(Error::SizeLimit) => {}
-			other => panic!("expected size limit error, got {:?}", other)
-		}
-	}
+		let mut runtime = tokio::runtime::Runtime::new().unwrap();
+		let f = client.get(&format!("http://{}/?1234", ADDRESS), abort);
+		let result = runtime.block_on(f);
 
-	#[test]
-	fn it_should_not_read_too_much_data_sync() {
-		let server = TestServer::run();
-		let client = Client::new().unwrap();
-		let abort = Abort::default().with_max_size(3);
-		let resp = client.get(&format!("http://{}/?1234", server.addr()), abort).wait().unwrap();
-		assert!(resp.is_success());
-		let mut buffer = Vec::new();
-		let mut reader = BodyReader::new(resp);
-		match reader.read_to_end(&mut buffer) {
-			Err(ref e) if e.kind() == io::ErrorKind::PermissionDenied => {}
-			other => panic!("expected size limit error, got {:?}", other)
-		}
-	}
-
-	struct TestServer(Timer);
-
-	impl Service for TestServer {
-		type Request = Request;
-		type Response = Response;
-		type Error = hyper::Error;
-		type Future = Box<Future<Item=Self::Response, Error=Self::Error>>;
-
-		fn call(&self, req: Request) -> Self::Future {
-			match req.uri().path() {
-				"/" => {
-					let body = req.uri().query().unwrap_or("").to_string();
-					let req = Response::new().with_body(body);
-					Box::new(future::ok(req))
+		match result {
+			Ok(_) => {},
+			Err(e) => {
+				match e {
+					Error::SizeLimit => {},
+					_ => { panic!("Expecting SizeLimit error, got {:#?}", e)}
 				}
-				"/redirect" => {
-					let loc = Location::new(req.uri().query().unwrap_or("/").to_string());
-					let req = Response::new()
-						.with_status(StatusCode::MovedPermanently)
-						.with_header(loc);
-					Box::new(future::ok(req))
-				}
-				"/loop" => {
-					let req = Response::new()
-						.with_status(StatusCode::MovedPermanently)
-						.with_header(Location::new("/loop".to_string()));
-					Box::new(future::ok(req))
-				}
-				"/delay" => {
-					let d = Duration::from_secs(req.uri().query().unwrap_or("0").parse().unwrap());
-					Box::new(self.0.sleep(d)
-							 .map_err(|_| return io::Error::new(io::ErrorKind::Other, "timer error"))
-							 .from_err()
-							 .map(|_| Response::new()))
-				}
-				_ => Box::new(future::ok(Response::new().with_status(StatusCode::NotFound)))
 			}
 		}
-	}
-
-	impl TestServer {
-		fn run() -> Handle {
-			let (tx_start, rx_start) = std::sync::mpsc::sync_channel(1);
-			let (tx_end, rx_end) = mpsc::channel(0);
-			let rx_end_fut = rx_end.into_future().map(|_| ()).map_err(|_| ());
-			thread::spawn(move || {
-				let addr = ADDRESS.parse().unwrap();
-				let server = Http::new().bind(&addr, || Ok(TestServer(Timer::default()))).unwrap();
-				tx_start.send(server.local_addr().unwrap()).unwrap_or(());
-				server.run_until(rx_end_fut).unwrap();
-			});
-			Handle(rx_start.recv().unwrap(), tx_end)
-		}
-	}
-
-	struct Handle(SocketAddr, mpsc::Sender<()>);
-
-	impl Handle {
-		fn addr(&self) -> SocketAddr {
-			self.0
-		}
-	}
-
-	impl Drop for Handle {
-		fn drop(&mut self) {
-			self.1.clone().send(()).wait().unwrap();
-		}
+		runtime.shutdown_now();
 	}
 }
