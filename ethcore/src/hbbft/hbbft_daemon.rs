@@ -82,7 +82,7 @@ impl HbbftDaemon {
 	/// Returns a new `HbbftDaemon`.
 	pub fn new(client: Arc<Client>, cfg: &HbbftConfig) -> Result<HbbftDaemon, Error> {
 		// Hydrabadger
-		let hdb = Hydrabadger::new(cfg.bind_address, cfg.to_hydrabadger());
+		let hdb = Hydrabadger::<u8>::new(cfg.bind_address, cfg.to_hydrabadger());
 		let hdb_peers = cfg.remote_addresses.clone();
 
 		let (shutdown, shutdown_rx) = Shutdown::new();
@@ -92,7 +92,7 @@ impl HbbftDaemon {
 
 		// Spawn runtime on its own thread:
 		let runtime_th = thread::Builder::new().name("tokio-runtime".to_string()).spawn(move || {
-			runtime.spawn(future::lazy(move || hdb.clone().node(Some(hdb_peers)) ));
+			runtime.spawn(future::lazy(move || hdb.clone().node(Some(hdb_peers), None) ));
 		    runtime.block_on(shutdown_rx).expect("Tokio runtime error");
 		    runtime.shutdown_now().wait().expect("Error shutting down tokio runtime");
 		}).map_err(|err| format!("Error creating thread: {:?}", err))?;
@@ -111,7 +111,7 @@ impl HbbftDaemon {
 				// Call experimental methods:
 				client.a_specialized_method();
 				client.change_me_into_something_useful();
-				client.import_a_bad_block_and_panic();
+				// client.import_a_bad_block_and_panic();
 
 				thread::sleep(Duration::from_millis(5000));
 			}
