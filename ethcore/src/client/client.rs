@@ -2312,7 +2312,8 @@ impl ImportSealedBlock for Client {
 			let header = block.header().clone();
 
 			let route = self.importer.commit_block(block, &header, encoded::Block::new(block_data), self);
-			trace!(target: "client", "Imported sealed block #{} ({})", number, h);
+			// trace!(target: "client", "Imported sealed block #{} ({})", number, h);
+			info!(target: "client", "Imported sealed block #{} ({})", number, h);
 			self.state_db.write().sync_cache(&route.enacted, &route.retracted, false);
 			route
 		};
