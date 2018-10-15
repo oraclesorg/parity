@@ -1346,7 +1346,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "hbbft"
 version = "0.1.0"
-source = "git+https://github.com/poanetwork/hbbft#6df72d86cc109538f69511be5e562e257b7fb2e0"
+source = "git+https://github.com/c0gent/hbbft?branch=tc-overflow-fix#2fbb2a3d9354a550519c8cd5d06edd1455e66c56"
 dependencies = [
  "bincode 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1360,7 +1360,7 @@ dependencies = [
  "reed-solomon-erasure 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
- "threshold_crypto 0.1.0 (git+https://github.com/poanetwork/threshold_crypto?tag=0.2.0-beta)",
+ "threshold_crypto 0.1.0 (git+https://github.com/poanetwork/threshold_crypto?branch=afck-underflow)",
  "tiny-keccak 1.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -1424,7 +1424,7 @@ dependencies = [
 [[package]]
 name = "hydrabadger"
 version = "0.1.0"
-source = "git+https://github.com/poanetwork/hydrabadger#99c66abe44b5bd0de1142e6fdeae73e703746e74"
+source = "git+https://github.com/poanetwork/hydrabadger#e51b8a17c00431a16df14c5c28c61dbb70bc5adf"
 dependencies = [
  "bincode 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder 1.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1438,7 +1438,7 @@ dependencies = [
  "env_logger 0.5.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "failure 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
- "hbbft 0.1.0 (git+https://github.com/poanetwork/hbbft)",
+ "hbbft 0.1.0 (git+https://github.com/c0gent/hbbft?branch=tc-overflow-fix)",
  "itertools 0.7.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-bigint 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3527,7 +3527,7 @@ dependencies = [
 [[package]]
 name = "threshold_crypto"
 version = "0.1.0"
-source = "git+https://github.com/poanetwork/threshold_crypto?tag=0.2.0-beta#20de873356b54e07a2c3263c69466058231b4ed3"
+source = "git+https://github.com/poanetwork/threshold_crypto?branch=afck-underflow#5a31947321277e3fb7b0553d2ab3dd493ffb1e48"
 dependencies = [
  "byteorder 1.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "errno 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -4342,7 +4342,7 @@ dependencies = [
 "checksum globset 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "464627f948c3190ae3d04b1bc6d7dca2f785bda0ac01278e6db129ad383dbeb6"
 "checksum hamming 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)" = "65043da274378d68241eb9a8f8f8aa54e349136f7b8e12f63e3ef44043cc30e1"
 "checksum hashdb 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d91261ee336dd046ac7df28306cb297b7a7228bd1ae25e9a57f4ed5e0ab628c7"
-"checksum hbbft 0.1.0 (git+https://github.com/poanetwork/hbbft)" = "<none>"
+"checksum hbbft 0.1.0 (git+https://github.com/c0gent/hbbft?branch=tc-overflow-fix)" = "<none>"
 "checksum heapsize 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "1679e6ea370dee694f91f1dc469bf94cf8f52051d147aec3e1f9497c6fc22461"
 "checksum heck 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ea04fa3ead4e05e51a7c806fc07271fdbde4e246a6c6d1efd52e72230b771b82"
 "checksum hex 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d6a22814455d41612f41161581c2883c0c6a1c41852729b17d5ed88f01e153aa"
@@ -4537,7 +4537,7 @@ dependencies = [
 "checksum thread-id 3.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "c7fbf4c9d56b320106cd64fd024dadfa0be7cb4706725fc44a7d7ce952d820c1"
 "checksum thread_local 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)" = "c6b53e329000edc2b34dbe8545fd20e55a333362d0a321909685a19bd28c3f1b"
 "checksum threadpool 1.7.1 (registry+https://github.com/rust-lang/crates.io-index)" = "e2f0c90a5f3459330ac8bc0d2f879c693bb7a2f59689c1083fc4ef83834da865"
-"checksum threshold_crypto 0.1.0 (git+https://github.com/poanetwork/threshold_crypto?tag=0.2.0-beta)" = "<none>"
+"checksum threshold_crypto 0.1.0 (git+https://github.com/poanetwork/threshold_crypto?branch=afck-underflow)" = "<none>"
 "checksum time 0.1.40 (registry+https://github.com/rust-lang/crates.io-index)" = "d825be0eb33fda1a7e68012d51e9c7f451dc1a69391e7fdc197060bb8c56667b"
 "checksum timer 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "31d42176308937165701f50638db1c31586f183f1aab416268216577aec7306b"
 "checksum tiny-keccak 1.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "e9175261fbdb60781fcd388a4d6cc7e14764a2b629a7ad94abb439aed223a44f"

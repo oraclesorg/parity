@@ -266,7 +266,7 @@ impl Importer {
 
 	/// This is triggered by a message coming from a block queue when the block is ready for insertion
 	pub fn import_verified_blocks(&self, client: &Client) -> usize {
-		info!("####### IMPORT_VERIFIED_BLOCKS: Called.");
+		debug!("####### IMPORT_VERIFIED_BLOCKS: Called.");
 
 		// Shortcut out if we know we're incapable of syncing the chain.
 		if !client.enabled.load(AtomicOrdering::Relaxed) {
@@ -1428,7 +1428,7 @@ impl CallContract for Client {
 
 impl ImportBlock for Client {
 	fn import_block(&self, unverified: Unverified) -> EthcoreResult<H256> {
-		info!("###### CLIENT::IMPORT_BLOCK: Called.");
+		debug!("###### CLIENT::IMPORT_BLOCK: Called.");
 		if self.chain.read().is_known(&unverified.hash()) {
 			bail!(EthcoreErrorKind::Import(ImportErrorKind::AlreadyInChain));
 		}
@@ -2302,7 +2302,7 @@ impl ScheduleInfo for Client {
 
 impl ImportSealedBlock for Client {
 	fn import_sealed_block(&self, block: SealedBlock) -> EthcoreResult<H256> {
-		info!("######### CLIENT::IMPORT_SEALED_BLOCK: Called.");
+		debug!("######### CLIENT::IMPORT_SEALED_BLOCK: Called.");
 		let h = block.header().hash();
 		let start = Instant::now();
 		let route = {
@@ -2346,7 +2346,7 @@ impl ImportSealedBlock for Client {
 
 impl BroadcastProposalBlock for Client {
 	fn broadcast_proposal_block(&self, block: SealedBlock) {
-		info!("######### CLIENT::BROADCAST_PROPOSAL_BLOCK: Called.");
+		debug!("######### CLIENT::BROADCAST_PROPOSAL_BLOCK: Called.");
 		const DURATION_ZERO: Duration = Duration::from_millis(0);
 		self.notify(|notify| {
 			notify.new_blocks(
