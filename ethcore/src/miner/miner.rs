@@ -480,7 +480,7 @@ impl Miner {
 		let block_start = Instant::now();
 
 		for transaction in pending {
-			info!("####### MINER::PREPARE_BLOCK_FROM: Processing pending transaction: {:?}.", transaction);
+			debug!("####### MINER::PREPARE_BLOCK_FROM: Processing pending transaction: {:?}.", transaction);
 			let start = Instant::now();
 
 			let hash = transaction.hash();
@@ -686,7 +686,7 @@ impl Miner {
 			},
 			// Directly import a regular sealed block.
 			Seal::Regular(seal) => {
-				info!("####### SEAL: {:?}", seal);
+				debug!("####### SEAL: {:?}", seal);
 				trace!(target: "miner", "Received a Regular seal.");
 				info!(target: "miner", "######## Received a Regular seal.");
 				{
@@ -698,7 +698,7 @@ impl Miner {
 					.lock()
 					.seal(&*self.engine, seal)
 					.map(|sealed| {
-						info!("###### IMPORTING SEALED BLOCK: \n\
+						debug!("###### IMPORTING SEALED BLOCK: \n\
 							header: {:?} \n\
 							state: {:?} \n\
 							transactions: {:?}\n",
