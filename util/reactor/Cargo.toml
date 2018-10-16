@@ -10,4 +10,5 @@ authors = ["Parity Technologies <admin@parity.io>"]
 futures = "0.1"
 # TODO: Remove:
 tokio-core = "0.1"
-tokio = "0.1"
+# tokio = "0.1"
+tokio = { git = "https://github.com/tokio-rs/tokio", rev = "256fa57" }
