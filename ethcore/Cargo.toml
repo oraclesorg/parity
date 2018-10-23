@@ -72,7 +72,8 @@ kvdb-rocksdb = "0.1.3"
 tempdir = {version="0.3", optional = true}
 failure = "0.1"
 futures = "0.1"
-parity-reactor = { path = "../util/runtime" }
+parity-runtime = { path = "../util/runtime" }
+tokio = "0.1"
 # hydrabadger = { path = "../../hydrabadger"}
 hydrabadger = { git = "https://github.com/poanetwork/hydrabadger"}
 
