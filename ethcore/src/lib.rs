@@ -116,7 +116,8 @@ extern crate journaldb;
 #[cfg(any(test, feature = "json-tests", feature = "test-helpers"))]
 extern crate tempdir;
 extern crate futures;
-extern crate parity_reactor;
+extern crate parity_runtime;
+extern crate tokio;
 extern crate hydrabadger;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "android"))]

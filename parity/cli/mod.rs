@@ -1902,6 +1902,7 @@ mod tests {
 			arg_hbbft_port: Some(5910),
 			arg_hbbft_interface: "local".into(),
 			arg_hbbft_remote_addresses: None,
+			arg_hbbft_txn_gen_count: None,
 		});
 	}
 
@@ -2124,7 +2125,7 @@ mod tests {
 				interface: Some("local".into()),
 				bind_address: None,
 				remote_addresses: Some(vec!["127.0.0.1:5911".to_owned()]),
-				txn_gen_count: 5,
+				txn_gen_count: None,
 			})
 		});
 	}

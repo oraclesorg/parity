@@ -29,7 +29,7 @@ use ethcore::miner::{stratum, Miner, MinerService, MinerOptions};
 use ethcore::snapshot::{self, SnapshotConfiguration};
 use ethcore::spec::{SpecParams, OptimizeFor};
 use ethcore::verification::queue::VerifierSettings;
-use ethcore::hbbft::HbbftConfig;
+use ethcore::hbbft::{HbbftConfig, HbbftDaemon, HbbftClientExt};
 use ethcore_logger::{Config as LogConfig, RotatingLogger};
 use ethcore_service::ClientService;
 use ethereum_types::Address;
@@ -566,7 +566,6 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 		account_provider.clone(),
 		Box::new(SecretStoreEncryptor::new(cmd.private_encryptor_conf, fetch.clone()).map_err(|e| e.to_string())?),
 		cmd.private_provider_conf,
-		Some(&cmd.hbbft),
 	).map_err(|e| format!("Client service error: {:?}", e))?;
 
 	let connection_filter_address = spec.params().node_permission_contract;
@@ -742,7 +741,7 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 		client: client.clone(),
 		sync: sync_provider.clone(),
 		miner: miner,
-		account_provider: account_provider,
+		account_provider: account_provider.clone(),
 		accounts_passwords: &passwords,
 	};
 	let secretstore_key_server = secretstore::start(cmd.secretstore_conf.clone(), secretstore_deps)?;
@@ -799,6 +798,15 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 		},
 	};
 
+	// Spawn hbbft daemon:
+	let hbbftd = Arc::new(HbbftDaemon::new(
+		client.clone(),
+		&cmd.hbbft,
+		account_provider,
+		&runtime.executor(),
+	).map_err(|err| err.to_string())?);
+	client.set_hbbft_daemon(hbbftd);
+
 	client.set_exit_handler(on_client_rq);
 	updater.set_exit_handler(on_updater_rq);
 
@@ -808,12 +816,7 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 			informant,
 			client,
 			client_service: Arc::new(service),
-<<<<<<< HEAD
 			keep_alive: Box::new((watcher, updater, ws_server, http_server, ipc_server, secretstore_key_server, ipfs_server, runtime)),
-=======
-			keep_alive: Box::new((watcher, updater, ws_server, http_server, ipc_server, secretstore_key_server,
-				ipfs_server, event_loop)),
->>>>>>> HBBFT: Add preliminary types and configuration files.
 		}
 	})
 }
