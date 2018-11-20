@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Weak, atomic::{AtomicBool, AtomicIsize, Ordering}};
 use std::thread;
 use std::time::{Instant, Duration, UNIX_EPOCH};
-use std::ops::Range;
+use std::ops::{Range, BitXorAssign};
 // TODO (c0gent): Update rand crate wide.
 use rand::{self, OsRng, Rng, distributions::{Sample, Range as RandRange}};
 use futures::{
@@ -39,6 +39,18 @@ use account_provider::AccountProvider;
 use super::laboratory::{Laboratory, Accounts};
 
 type NodeId = Uid;
+
+/// XOR two slices in-place.
+///
+/// XORs `src` element-wise onto `dest`, altering `dest` in the process.
+fn xor_slices<'a, T>(dest: &'a mut [T], src: &'a [T])
+	where T: BitXorAssign<&'a T>,
+{
+	for (a, b) in dest.iter_mut().zip(src.iter()) {
+		*a ^= b;
+	}
+}
+
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Serialize, Deserialize)]
 pub(super) struct Contribution {
@@ -428,6 +440,8 @@ mod tests {
 	use block::{OpenBlock, SealedBlock, ClosedBlock};
 	use header::Header;
 
+	use super::xor_slices;
+
 
 
 	#[test]
@@ -442,6 +456,16 @@ mod tests {
 		};
 
 		client.import_block(bad_block).unwrap();
+	}
+
+	#[test]
+	fn xor_slices_simple() {
+		let mut a = [0b10101010, 0b00001111];
+		let b = [0b10010011, 0b00110011];
+		let expected = [0b00111001, 0b00111100];
+		xor_slices(&mut a, &b);
+
+		assert_eq!(&expected, &a);
 	}
 }
 
