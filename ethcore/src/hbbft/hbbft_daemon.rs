@@ -1,3 +1,4 @@
+
 //! An hbbft <-> Parity link which relays events and acts as an intermediary.
 
 #![allow(dead_code, unused_imports, unused_variables, unused_mut, missing_docs)]
@@ -44,7 +45,7 @@ type NodeId = Uid;
 /// Number of random bytes to generate per epoch.
 ///
 /// Currently, we want twenty u32s worth of random data to generated on each epoch.
-// TODO (mbr): Make this configurable somewhere.
+// TODO (c0gent): Make this configurable somewhere.
 const RANDOM_BYTES_PER_EPOCH: usize = 4*20;
 
 
@@ -54,6 +55,7 @@ const RANDOM_BYTES_PER_EPOCH: usize = 4*20;
 fn xor_slices<'a, T>(dest: &'a mut [T], src: &'a [T])
 	where T: BitXorAssign<&'a T>,
 {
+	assert_eq!(dest.len(), src.len(), "::xor_slices: slices must be the same length");
 	for (a, b) in dest.iter_mut().zip(src.iter()) {
 		*a ^= b;
 	}
@@ -292,8 +294,6 @@ impl BatchHandler {
 		// contributions at this point, so we are guaranteed to get the same value back each time.
 		let mut random_data = [0; RANDOM_BYTES_PER_EPOCH];
 		for (_, c) in batch.contributions() {
-			assert_eq!(c.random_data.len(), RANDOM_BYTES_PER_EPOCH,
-			           "Random bytes per epoch must be the same on each client.");
 			xor_slices(&mut random_data, &c.random_data)
 		};
 		info!("Produces random data {:?} in epoch {}.", &random_data[..], epoch);
