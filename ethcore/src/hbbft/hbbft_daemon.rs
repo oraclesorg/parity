@@ -296,7 +296,7 @@ impl BatchHandler {
 			           "Random bytes per epoch must be the same on each client.");
 			xor_slices(&mut random_data, &c.random_data)
 		};
-		info!("Produces random data {:?} in epoch {}.", random_data, epoch);
+		info!("Produces random data {:?} in epoch {}.", &random_data[..], epoch);
 
 		let batch_txns: Vec<_> = batch.contributions().flat_map(|(_, c)| &c.transactions).filter_map(|ser_txn| {
 			// TODO: Report proposers of malformed transactions.
