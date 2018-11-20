@@ -203,7 +203,7 @@ impl ContributionPusher {
 		let contribution = Contribution {
 			transactions: ser_txns,
 			timestamp: unix_now_secs(),
-			random_data: iter::repeat_with(|| rng.gen()).take(RANDOM_BYTES_PER_EPOCH).collect(),
+			random_data: rng.gen_iter().take(RANDOM_BYTES_PER_EPOCH).collect(),
 		};
 		info!("Proposing {} transactions (after {} attempts).", contribution.transactions.len(),
 			self.push_attempts);
