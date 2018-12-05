@@ -22,6 +22,7 @@ use tokio::{self, timer::Delay};
 use hbbft::HbbftConfig;
 use itertools::Itertools;
 use rlp::{Decodable, Encodable, Rlp};
+use rustc_hex::FromHex;
 use ethstore;
 use ethjson::misc::AccountMeta;
 use ethkey::{Brain, Generator, Password, Random};
@@ -182,7 +183,7 @@ impl Contract {
 			gas_price: 0.into(),
 			gas: client.miner().sensible_gas_limit(),
 			value: 0.into(),
-			data: TEST_CONTRACT_BINARY.to_owned(),
+			data: TEST_CONTRACT_BINARY.from_hex().unwrap(),
 		}
 	}
 }
@@ -535,7 +536,7 @@ impl Laboratory {
 					gas_price: 0.into(),
 					gas: client.miner().sensible_gas_limit(),
 					value: 0.into(),
-					data: TEST_CONTRACT_BINARY.to_owned(),
+					data: TEST_CONTRACT_BINARY.from_hex().unwrap(),
 				}
 			);
 
@@ -543,7 +544,7 @@ impl Laboratory {
 
 			match client.miner().import_claimed_local_transaction(&*client, txn_signed.into(), false) {
 				Ok(()) => {},
-				err => panic!("Unable to import generated transaction: {:?}", err),
+				Err(ref err) => panic!("Unable to import generated transaction: {:?}", err),
 			}
 
 			self.contract.deploy_txn_id = Some(TransactionId::Hash(txn_hash));
@@ -600,7 +601,7 @@ impl Laboratory {
 
 }
 
-const TEST_CONTRACT_BINARY: &[u8] = br#"0x608060405234801561001057600080fd5b5060008054600160a060020a03191633179055610142806100326000396000f30060806040526004361061004b5763ffffffff7c010000000000000000000000000000000000000000000000000000000060003504166313af40358114610050578063893d20e814610080575b600080fd5b34801561005c57600080fd5b5061007e73ffffffffffffffffffffffffffffffffffffffff600435166100be565b005b34801561008c57600080fd5b506100956100fa565b6040805173ffffffffffffffffffffffffffffffffffffffff9092168252519081900360200190f35b6000805473ffffffffffffffffffffffffffffffffffffffff191673ffffffffffffffffffffffffffffffffffffffff92909216919091179055565b60005473ffffffffffffffffffffffffffffffffffffffff16905600a165627a7a72305820d57cdcf8acc8736a2ad737c6c4b5b69e7fefe49b812f7a110f52cfb31b819b4a0029"#;
+const TEST_CONTRACT_BINARY: &str = r#"608060405234801561001057600080fd5b5060008054600160a060020a03191633179055610142806100326000396000f30060806040526004361061004b5763ffffffff7c010000000000000000000000000000000000000000000000000000000060003504166313af40358114610050578063893d20e814610080575b600080fd5b34801561005c57600080fd5b5061007e73ffffffffffffffffffffffffffffffffffffffff600435166100be565b005b34801561008c57600080fd5b506100956100fa565b6040805173ffffffffffffffffffffffffffffffffffffffff9092168252519081900360200190f35b6000805473ffffffffffffffffffffffffffffffffffffffff191673ffffffffffffffffffffffffffffffffffffffff92909216919091179055565b60005473ffffffffffffffffffffffffffffffffffffffff16905600a165627a7a72305820d57cdcf8acc8736a2ad737c6c4b5b69e7fefe49b812f7a110f52cfb31b819b4a0029"#;
 
 const TEST_CONTRACT_GAS: usize = 4700000;
 
