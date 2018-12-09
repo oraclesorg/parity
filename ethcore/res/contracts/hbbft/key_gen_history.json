@@ -1,35 +1,107 @@
 [
 	{
-		"type": "event",
-		"name": "PartWritten",
-		"inputs": [
-			{"name": "validator", "type": "address", "indexed": true},
-			{"name": "part", "type": "bytes", "indexed": false},
-			{"name": "stakingEpoch", "type": "uint256", "indexed": true},
-			{"name": "changeRequestCount", "type": "uint256", "indexed": true}
-		],
-		"anonymous": false
-	},
-	{
-		"type": "event",
-		"name": "AcktWritten",
-		"inputs": [
-			{"name": "validator", "type": "address", "indexed": true},
-			{"name": "hashOfPart", "type": "bytes32", "indexed": true},
-			{"name": "ack", "type": "bytes", "indexed": false},
-			{"name": "stakingEpoch", "type": "uint256", "indexed": false},
-			{"name": "changeRequestCount", "type": "uint256", "indexed": true}
-		],
-		"anonymous": false
-	},
-	{
-		"type": "function",
-		"name": "isKeyGenComplete",
-		"inputs": [],
-		"outputs": [
-			{"name": "", "type": "bool"}
-		],
 		"constant": false,
-		"payable": false
+		"inputs": [
+			{
+				"name": "_ack",
+				"type": "bytes"
+			}
+		],
+		"name": "writeAck",
+		"outputs": [],
+		"payable": false,
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"constant": false,
+		"inputs": [],
+		"name": "incrementChangeRequestCount",
+		"outputs": [],
+		"payable": false,
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"constant": false,
+		"inputs": [
+			{
+				"name": "_part",
+				"type": "bytes"
+			}
+		],
+		"name": "writePart",
+		"outputs": [],
+		"payable": false,
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"constant": true,
+		"inputs": [],
+		"name": "changeRequestCount",
+		"outputs": [
+			{
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"name": "validator",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"name": "part",
+				"type": "bytes"
+			},
+			{
+				"indexed": true,
+				"name": "stakingEpoch",
+				"type": "uint256"
+			},
+			{
+				"indexed": true,
+				"name": "changeRequestCount",
+				"type": "uint256"
+			}
+		],
+		"name": "PartWritten",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"name": "validator",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"name": "ack",
+				"type": "bytes"
+			},
+			{
+				"indexed": true,
+				"name": "stakingEpoch",
+				"type": "uint256"
+			},
+			{
+				"indexed": true,
+				"name": "changeRequestCount",
+				"type": "uint256"
+			}
+		],
+		"name": "AckWritten",
+		"type": "event"
 	}
 ]

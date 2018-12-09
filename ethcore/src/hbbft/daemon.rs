@@ -39,8 +39,9 @@ use block::{OpenBlock, ClosedBlock, IsBlock, LockedBlock, SealedBlock};
 use state::{self, State, CleanupMode};
 use account_provider::AccountProvider;
 use super::laboratory::{Laboratory, Accounts};
+use super::key_gen;
 
-type NodeId = Uid;
+type NodeId = Address;
 
 /// Number of random bytes to generate per epoch.
 ///
@@ -109,6 +110,11 @@ error_chain! {
 			description("ethstore error (richie)")
 			display("ethstore error (richie): {:?}", err)
 		}
+		#[doc = "A key generation creation error."]
+		KeyGenNew(err: key_gen::Error) {
+			description("Error creating key generation instance")
+			display("Error creating key generation instance: {:?}", err)
+		}
 	}
 }
 
@@ -130,34 +136,34 @@ fn unix_now_secs() -> u64 {
 }
 
 /// Handles submission of transactions into Hydrabadger.
-struct ContributionPusher {
+struct ContributionProposer {
 	cfg: HbbftConfig,
 	client: Weak<Client>,
-	hydrabadger: Hydrabadger<Contribution>,
+	hydrabadger: Hydrabadger<Contribution, Address>,
 	block_counter: Arc<AtomicIsize>,
-	push_attempts: usize,
+	propose_attempts: usize,
 	epoch_rx: EpochRx,
 }
 
-impl ContributionPusher {
-	fn new(cfg: HbbftConfig, client: Weak<Client>, hydrabadger: Hydrabadger<Contribution>,
-		block_counter: Arc<AtomicIsize>, epoch_rx: EpochRx) -> ContributionPusher
+impl ContributionProposer {
+	fn new(cfg: HbbftConfig, client: Weak<Client>, hydrabadger: Hydrabadger<Contribution, Address>,
+		block_counter: Arc<AtomicIsize>, epoch_rx: EpochRx) -> ContributionProposer
 	{
-		ContributionPusher { cfg, client, hydrabadger, block_counter, push_attempts: 0, epoch_rx }
+		ContributionProposer { cfg, client, hydrabadger, block_counter, propose_attempts: 0, epoch_rx }
 	}
 
 	/// Returns the current number of transactions needed before a
 	/// contribution is pushed.
 	fn next_batch_threshold(&mut self) -> usize {
-		let threshold = 1 << (self.cfg.contribution_size_max_log2.saturating_sub(self.push_attempts));
-		self.push_attempts += 1;
+		let threshold = 1 << (self.cfg.contribution_size_max_log2.saturating_sub(self.propose_attempts));
+		self.propose_attempts += 1;
 		threshold
 	}
 
 	/// Inputs pending transactions as this node's contribution for the next batch into Honey Badger.
 	///
 	/// Called every `CONTRIBUTION_PUSH_DELAY_MS`.
-	fn push_contribution(&mut self) {
+	fn propose_contribution(&mut self) {
 		let client = match self.client.upgrade() {
 			Some(client) => client,
 			None => return,
@@ -181,16 +187,16 @@ impl ContributionPusher {
 
 		match self.epoch_rx.poll() {
 			Ok(Async::Ready(Some(epoch))) => {
-				debug!("CONTRIBUTION_PUSHER: epoch {} has begun.", epoch);
+				debug!("CONTRIBUTION_PROPOSER: epoch {} has begun.", epoch);
 			}
 			Ok(Async::Ready(None)) => {
-				info!("CONTRIBUTION_PUSHER: Hydrabadger epoch tx has dropped.",);
+				info!("CONTRIBUTION_PROPOSER: Hydrabadger epoch tx has dropped.",);
 				return;
 			}
 			Ok(Async::NotReady) => {
 				return;
 			}
-			Err(err) => panic!("HbbftDaemon: ContributionPusher: Epoch Tx error: {:?}", err),
+			Err(err) => panic!("HbbftDaemon: ContributionProposer: Epoch Tx error: {:?}", err),
 		}
 
 		// Our contribution size.
@@ -206,7 +212,7 @@ impl ContributionPusher {
 			debug!("Limiting proposal to {} transactions.", contrib_size);
 			rand::seq::sample_slice(&mut rng, &pending, contrib_size)
 		};
-		info!("ContributionPusher is proposing {} transactions to hydrabadger.", txns.len());
+		info!("ContributionProposer is proposing {} transactions to hydrabadger.", txns.len());
 		let ser_txns: Vec<_> = txns.into_iter().map(|txn| txn.signed().rlp_bytes()).collect();
 		let contribution = Contribution {
 			transactions: ser_txns,
@@ -214,20 +220,20 @@ impl ContributionPusher {
 			random_data: rng.gen_iter().take(RANDOM_BYTES_PER_EPOCH).collect(),
 		};
 		info!("Proposing {} transactions (after {} attempts).", contribution.transactions.len(),
-			self.push_attempts);
+			self.propose_attempts);
 
 		self.hydrabadger.propose_user_contribution(contribution)
 			.expect("TODO: Add transactions back to miner txn queue");
 
 		// Reset push attempts counter:
-		self.push_attempts = 0;
+		self.propose_attempts = 0;
 	}
 
-	/// Consumes this `ContributionPusher` and returns a `LoopFn` which calls
-	/// `::push_contribution` every `CONTRIBUTION_PUSH_DELAY_MS`.
+	/// Consumes this `ContributionProposer` and returns a `LoopFn` which calls
+	/// `::propose_contribution` every `CONTRIBUTION_PUSH_DELAY_MS`.
 	fn into_loop(self) -> impl Future<Item = (), Error = ()> + Send {
 		future::loop_fn(self, |mut cp| {
-			cp.push_contribution();
+			cp.propose_contribution();
 
 			// This can be adjusted dynamically if needed:
 			let loop_delay = cp.cfg.contribution_delay_ms;
@@ -239,7 +245,7 @@ impl ContributionPusher {
 	}
 }
 
-// impl Future for ContributionPusher {
+// impl Future for ContributionProposer {
 // 	type Item = ();
 // 	type Error = Error;
 
@@ -249,8 +255,8 @@ impl ContributionPusher {
 // 		match self.epoch_rx.poll() {
 // 			Ok(Async::Ready(Some(epoch))) => {
 // 				// TODO: Add delay.
-// 				info!("####### CONTRIBUTION_PUSHER: epoch {} has begun.", epoch);
-// 				self.push_contribution(epoch);
+// 				info!("####### CONTRIBUTION_PROPOSER: epoch {} has begun.", epoch);
+// 				self.propose_contribution(epoch);
 // 			}
 // 			Ok(Async::Ready(None)) => {
 // 				return Ok(Async::Ready(()));
@@ -268,14 +274,14 @@ impl ContributionPusher {
 // TODO: Create a transaction queue semaphore to allow/disallow transactions
 // from being streamed into hydrabadger and manipulate its state from here.
 struct BatchHandler {
-	batch_rx: BatchRx<Contribution>,
+	batch_rx: BatchRx<Contribution, Address>,
 	client: Weak<Client>,
-	hydrabadger: Hydrabadger<Contribution>,
+	hydrabadger: Hydrabadger<Contribution, Address>,
 	block_counter: Arc<AtomicIsize>,
 }
 
 impl BatchHandler {
-	fn new(batch_rx: BatchRx<Contribution>, client: Weak<Client>, hydrabadger: Hydrabadger<Contribution>,
+	fn new(batch_rx: BatchRx<Contribution, Address>, client: Weak<Client>, hydrabadger: Hydrabadger<Contribution, Address>,
 		block_counter: Arc<AtomicIsize>) -> BatchHandler
 	{
 		BatchHandler { batch_rx, client, hydrabadger, block_counter }
@@ -302,7 +308,7 @@ impl BatchHandler {
 		for (_, c) in batch.contributions() {
 			xor_slices(&mut random_data, &c.random_data)
 		};
-		info!("Produces random data {:?} in epoch {}.", &random_data[..], epoch);
+		debug!("Produces random data {:?} in epoch {}.", &random_data[..], epoch);
 
 		let batch_txns: Vec<_> = batch.contributions().flat_map(|(_, c)| &c.transactions).filter_map(|ser_txn| {
 			// TODO: Report proposers of malformed transactions.
@@ -385,7 +391,7 @@ impl Future for BatchHandler {
 pub struct HbbftDaemon {
 	// Unused:
 	client: Weak<Client>,
-	hydrabadger: HydrabadgerWeak<Contribution>,
+	hydrabadger: HydrabadgerWeak<Contribution, Address>,
 }
 
 impl HbbftDaemon {
@@ -401,8 +407,15 @@ impl HbbftDaemon {
 		// Set our starting epoch equal to the best block number in the chain:
 		hdb_config.start_epoch =  client.chain_info().best_block_number;
 
+		// Set up local accounts (used temporarily):
+		//
+		// TODO: Use (and require) engine signer account.
+		let accounts = Accounts::new(&*account_provider, &*client, &cfg.bind_address.to_string(),
+			cfg.txn_gen_count, 5)?;
+
 		// Spawn Hydrabadger node:
-		let hydrabadger = Hydrabadger::<Contribution>::new(cfg.bind_address, hdb_config);
+		let hydrabadger = Hydrabadger::<Contribution, Address>::new(cfg.bind_address, hdb_config,
+			accounts.signer_account().address);
 		let hdb_peers = cfg.remote_addresses.clone();
 		executor.spawn(hydrabadger.clone().node(Some(hdb_peers), None));
 
@@ -412,7 +425,7 @@ impl HbbftDaemon {
 		let epoch_rx = hydrabadger.register_epoch_listener();
 
 		// Spawn contribution pusher:
-		executor.spawn(ContributionPusher::new(
+		executor.spawn(ContributionProposer::new(
 			cfg.clone(),
 			Arc::downgrade(&client),
 			hydrabadger.clone(),
@@ -434,10 +447,6 @@ impl HbbftDaemon {
 		executor.spawn(batch_handler.map_err(|err| panic!("Unhandled batch handler error: {:?}", err)));
 		info!("Hbbft batch handler has been started.");
 
-		// Set up an account to use for txn gen:
-		let accounts = Accounts::new(&*account_provider, &*client, &cfg.bind_address.to_string(),
-			cfg.txn_gen_count, 5)?;
-
 		// Spawn experimentation loop:
 		executor.spawn(Laboratory::new(
 			Arc::downgrade(&client),
@@ -446,7 +455,7 @@ impl HbbftDaemon {
 			account_provider,
 			accounts,
 			block_counter,
-		).into_loop());
+		)?.into_loop());
 
 		Ok(HbbftDaemon {
 			client: Arc::downgrade(&client),

@@ -27,6 +27,7 @@ mod validator_set;
 pub mod block_reward;
 pub mod epoch;
 
+pub use self::signer::EngineSigner;
 pub use self::authority_round::AuthorityRound;
 pub use self::basic_authority::BasicAuthority;
 pub use self::epoch::{EpochVerifier, Transition as EpochTransition};

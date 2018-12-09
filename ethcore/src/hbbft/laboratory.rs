@@ -2,6 +2,7 @@
 
 #![allow(dead_code, unused_imports, unused_variables, unused_mut, missing_docs)]
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak, atomic::{AtomicBool, AtomicIsize, Ordering}};
 use std::thread;
@@ -27,7 +28,7 @@ use ethstore;
 use ethjson::misc::AccountMeta;
 use ethkey::{Brain, Generator, Password, Random};
 use ethereum_types::{U256, H256, Address};
-use types::{ids::TransactionId, receipt::LocalizedReceipt};
+use types::{ids::TransactionId, receipt::LocalizedReceipt, filter::Filter};
 use header::Header;
 use client::{BlockChainClient, Client, ClientConfig, BlockId, ChainInfo, BlockInfo, PrepareOpenBlock,
 	ImportSealedBlock, ImportBlock, CallContract};
@@ -38,7 +39,9 @@ use block::{OpenBlock, ClosedBlock, IsBlock, LockedBlock, SealedBlock};
 use state::{self, State, CleanupMode};
 use account_provider::AccountProvider;
 use ethabi::FunctionOutputDecoder;
+use hydrabadger::hbbft::crypto::PublicKey;
 use super::daemon::{HbbftDaemon, Contribution, Error, ErrorKind, HbbftClientExt};
+use super::key_gen::{KeyGen, KEY_GEN_HISTORY_CONTRACT_HEX};
 
 const RICHIE_ACCT: &'static str = "0x002eb83d1d04ca12fe1956e67ccaa195848e437f";
 const RICHIE_PWD: &'static str =  "richie";
@@ -71,10 +74,22 @@ fn create_account(account_provider: &AccountProvider, name: &str)
 	Ok((addr, pwd))
 }
 
+/// Converts an unsigned `Transaction` to a `SignedTransaction`.
+fn sign_txn(account_provider: &AccountProvider, sender: Address, password: Password,
+	chain_id: Option<u64>, txn: Transaction) -> SignedTransaction
+{
+	// let chain_id = self.client.signing_chain_id();
+	let txn_hash = txn.hash(chain_id);
+	let sig = account_provider.sign(sender, Some(password), txn_hash)
+		.unwrap_or_else(|e| panic!("[hbbft-lab] failed to sign txn: {:?}", e));
+	let unverified_txn = txn.with_signature(sig, chain_id);
+	SignedTransaction::new(unverified_txn).unwrap()
+}
+
 /// Account info.
 #[derive(Clone, Debug)]
-struct Account {
-	address: Address,
+pub struct Account {
+	pub address: Address,
 	password: Password,
 	balance: U256,
 	nonce: U256,
@@ -88,12 +103,12 @@ struct Account {
 
 /// Node-specific accounts to be used in transaction generation.
 #[derive(Clone, Debug)]
-pub(super) struct Accounts {
+pub struct Accounts {
 	accounts: Vec<Account>,
 	stage_size: usize,
 	stage_count: usize,
 	next_stage: usize,
-	contract_acct_idx: usize,
+	signer_acct_idx: usize,
 }
 
 impl Accounts {
@@ -118,14 +133,14 @@ impl Accounts {
 			Ok(Account { address, password, balance, nonce, retries: 0 })
 		}).collect::<Result<Vec<_>, Error>>()?;
 
-		let contract_acct_idx = accounts.len() - 1;
+		let signer_acct_idx = accounts.len() - 1;
 
 		Ok(Accounts {
 			accounts,
 			stage_size: txn_gen_count,
 			stage_count,
 			next_stage: 0,
-			contract_acct_idx,
+			signer_acct_idx,
 		})
 	}
 
@@ -143,8 +158,8 @@ impl Accounts {
 	}
 
 	/// Returns the account used for creating contracts.
-	fn contract_account(&self) -> &Account {
-		&self.accounts[self.contract_acct_idx]
+	pub fn signer_account(&self) -> &Account {
+		&self.accounts[self.signer_acct_idx]
 	}
 
 	/// Returns a slice of the accounts in the 'stage' specified.
@@ -161,35 +176,238 @@ impl Accounts {
 	}
 }
 
-
-/// Contract testing.
-pub(super) struct Contract {
+/// Deploys a Contract.
+//
+// FIXME: Use a common signer (create one).
+pub struct ContractDeployer {
+	binary: String,
 	deploy_txn_id: Option<TransactionId>,
 	receipt: Option<LocalizedReceipt>,
+	address: Option<Address>,
+}
+
+impl ContractDeployer {
+	pub fn new(binary: String) -> ContractDeployer {
+		ContractDeployer {
+			binary,
+			deploy_txn_id: None,
+			receipt: None,
+			address: None,
+		}
+	}
+
+	fn create_txn(&self, nonce: U256, binary: &str, client: &Client) -> Transaction {
+		Transaction {
+			action: Action::Create,
+			nonce,
+			// gas_price: client.miner().sensible_gas_price(),
+			gas_price: 0.into(),
+			gas: client.miner().sensible_gas_limit(),
+			value: 0.into(),
+			data: binary.from_hex().unwrap(),
+		}
+	}
+
+	// Adds a contract creation transaction to the queue.
+	fn push(&mut self, client: &Client, accounts: &Accounts, account_provider: &AccountProvider) {
+		let sender = accounts.signer_account();
+
+		let sender_nonce = client.state().nonce(&sender.address)
+			.unwrap_or_else(|_| panic!("Unable to determine nonce for account: {}", sender.address));
+
+		let txn_signed = sign_txn(account_provider, sender.address, sender.password.clone(),
+			client.signing_chain_id(), self.create_txn(sender_nonce, &self.binary, client));
+
+		let txn_hash = txn_signed.hash();
+
+		match client.miner().import_claimed_local_transaction(&*client, txn_signed.into(), true) {
+			Ok(()) => {},
+			Err(TransactionError::AlreadyImported) => {
+				panic!("DEPLOYER: Unable to push contract deploy transaction: Already imported.");
+			},
+			Err(TransactionError::Old) => {
+				panic!("DEPLOYER: Unable to push contract deploy transaction: Old nonce: {}", sender_nonce);
+			},
+			Err(ref err) => panic!("Unable to push contract deploy transaction: {:?}", err),
+		}
+
+		self.deploy_txn_id = Some(TransactionId::Hash(txn_hash));
+		info!("Contract pushed to transaction queue: {}", txn_hash);
+	}
+
+	// Check for receipt.
+	fn check(&mut self, client: &Client) {
+		if let Some(receipt) = client.transaction_receipt(self.deploy_txn_id.clone().unwrap()) {
+			match receipt.contract_address.clone() {
+				Some(addr) => {
+					info!("Contract created with address: {}", addr);
+					self.address = Some(addr);
+					self.receipt = Some(receipt);
+				},
+				None => panic!("Contract creation transaction has no contract address"),
+			}
+		}
+	}
+
+	pub fn address(&self) -> Option<&Address> {
+		self.address.as_ref()
+	}
+
+	// Call this in a loop.
+	pub fn deploy(&mut self, client: &Client, accounts: &Accounts, account_provider: &AccountProvider
+	) -> Option<&Address> {
+		if self.deploy_txn_id.is_none() {
+			self.push(client, accounts, account_provider);
+		} else if self.receipt.is_none() {
+			self.check(client);
+		}
+		self.address()
+	}
+}
+
+
+// A contract binary.
+pub enum Binary {
+	// A contract in the spec.
+	BuiltIn(Address),
+	// A raw contract binary.
+	User(String),
+}
+
+impl Binary {
+	fn is_user(&self) -> bool {
+		match self {
+			Binary::BuiltIn(_) => false,
+			Binary::User(_) => true,
+		}
+	}
+}
+
+/// Contract testing.
+pub(super) struct ContractTester {
+	deployer: ContractDeployer,
 	new_owner_address: Option<(Address, TransactionId)>,
 }
 
-impl Contract {
-	pub fn new() -> Contract {
-		Contract {
-			deploy_txn_id: None,
-			receipt: None,
+impl ContractTester {
+	pub fn new(binary: Binary) -> ContractTester {
+		let bin_str = match binary {
+			Binary::User(b) => b,
+			_ => unimplemented!("Not yet implemented for built in contracts"),
+		};
+
+		ContractTester {
+			deployer: ContractDeployer::new(bin_str),
 			new_owner_address: None,
 		}
 	}
 
-	fn create_txn(&self, client: &Client) -> Transaction {
-		Transaction {
-			action: Action::Create,
-			nonce: 0.into(),
-			gas_price: 0.into(),
-			gas: client.miner().sensible_gas_limit(),
-			value: 0.into(),
-			data: TEST_CONTRACT_BINARY.from_hex().unwrap(),
+	/// Verifies owner address.
+	fn verify(&mut self, client: &Client, accounts: &Accounts) {
+		let receipt = self.deployer.receipt.as_ref().unwrap();
+		let block = BlockId::Latest;
+		let address = receipt.contract_address.clone().unwrap();
+		let (data, decoder) = test_junk_contract::functions::get_owner::call();
+		let value = client.call_contract(block, address, data)
+			.expect("Error calling test contract");
+		let owner_addr = decoder.decode(&value)
+			.expect("Error decoding test contract return value");
+		info!("CONTRACTTESTER: Test contract owner address: {} (orig: {})", owner_addr, accounts.signer_account().address);
+
+		match self.new_owner_address {
+			Some((new_addr, ref txn_id)) => {
+				// Presumably this could fail if the block state changes
+				// between the above call to `::call_contract` and this
+				// call to `::transaction_receipt`.
+				match client.transaction_receipt(txn_id.clone()) {
+					Some(_receipt) => assert_eq!(owner_addr, new_addr),
+					None => assert_eq!(owner_addr, accounts.signer_account().address),
+				}
+			},
+			None => {
+				// This will panic if the block state is not started fresh:
+				if owner_addr != accounts.signer_account().address {
+					panic!("CONTRACTTESTER: Block state wasn't cleared before this run");
+				}
+			},
+		}
+	}
+
+	/// Modifies owner address.
+	fn modify(&mut self, client: &Client, accounts: &Accounts, account_provider: &AccountProvider) {
+		if self.deployer.receipt.is_some() && self.new_owner_address.is_none() {
+			let sender = accounts.signer_account();
+			let sender_nonce = client.miner().next_nonce(client, &sender.address);
+			let contract_addr = self.deployer.receipt.as_ref().unwrap().contract_address.clone().unwrap();
+			let new_addr = accounts.accounts()[0].address.clone();
+			let data = test_junk_contract::functions::set_owner::encode_input(new_addr);
+
+			let txn_signed = sign_txn(account_provider, sender.address, sender.password.clone(), client.signing_chain_id(),
+				Transaction {
+					action: Action::Call(contract_addr),
+					nonce: sender_nonce,
+					gas_price: 0.into(),
+					gas: client.miner().sensible_gas_limit(),
+					value: 0.into(),
+					data,
+				}
+			);
+
+			let txn_hash = txn_signed.hash();
+
+			match client.miner().import_claimed_local_transaction(&*client, txn_signed.into(), false) {
+				Ok(()) => {},
+				// Nonce already used: Retry?
+				Err(TransactionError::Old) => {},
+				Err(ref err) => error!("Unable to import setOwner transaction: {:?}", err),
+			}
+
+			info!("CONTRACTTESTER: Setting owner address to {} (orig: {})", new_addr,
+				accounts.signer_account().address);
+
+			self.new_owner_address = Some((new_addr, TransactionId::Hash(txn_hash)));
+		}
+	}
+
+	/// Runs a little routine.
+	fn stuff(&mut self, client: &Client, accounts: &Accounts, account_provider: &AccountProvider) {
+		if self.deployer.deploy(client, accounts, account_provider).is_some() {
+			self.verify(client, accounts);
+		}
+
+		self.modify(client, accounts, account_provider);
+
+		// Play with events.
+		if self.new_owner_address.is_some() {
+			let receipt = self.deployer.receipt.as_ref().unwrap();
+			let address = receipt.contract_address.clone().unwrap();
+
+			let filter = Filter {
+				from_block: BlockId::Earliest,
+				to_block: BlockId::Latest,
+				address: Some(vec![address]),
+				topics: vec![],
+				limit: None,
+			};
+
+			for log_entry in client.logs(filter).expect("Error getting logs from client") {
+				info!("Log Entry: {:?}", log_entry);
+
+				let event = test_junk_contract::events::owner_set::parse_log(
+					(log_entry.topics.clone(), log_entry.data.clone()).into()
+				).expect("Error parsing log entry into event");
+
+				info!("CONTRACTTESTER: Event: {:?}", event);
+			}
 		}
 	}
 }
 
+// Key generation testing.
+enum KeyGenTester {
+	Deployer(ContractDeployer),
+	KeyGen(KeyGen),
+}
 
 /// Experiments and other junk.
 //
@@ -197,26 +415,27 @@ impl Contract {
 //
 pub(super) struct Laboratory {
 	client: Weak<Client>,
-	hydrabadger: Hydrabadger<Contribution>,
+	hydrabadger: Hydrabadger<Contribution, Address>,
 	hdb_cfg: HbbftConfig,
 	account_provider: Arc<AccountProvider>,
 	accounts: Accounts,
 	block_counter: Arc<AtomicIsize>,
 	last_block: isize,
 	gen_counter: usize,
-	contract: Contract,
+	contract: ContractTester,
+	key_gen: KeyGenTester,
 }
 
 impl Laboratory {
 	pub fn new(
 		client: Weak<Client>,
-		hydrabadger: Hydrabadger<Contribution>,
+		hydrabadger: Hydrabadger<Contribution, Address>,
 		hdb_cfg: HbbftConfig,
 		account_provider: Arc<AccountProvider>,
 		accounts: Accounts,
 		block_counter: Arc<AtomicIsize>,
-	) -> Laboratory {
-		Laboratory {
+	) -> Result<Laboratory, Error> {
+		Ok(Laboratory {
 			client,
 			hydrabadger,
 			hdb_cfg,
@@ -225,8 +444,9 @@ impl Laboratory {
 			block_counter,
 			last_block: 0,
 			gen_counter: 0,
-			contract: Contract::new(),
-		}
+			contract: ContractTester::new(Binary::User(TEST_CONTRACT_BINARY_HEX.to_owned())),
+			key_gen: KeyGenTester::Deployer(ContractDeployer::new(KEY_GEN_HISTORY_CONTRACT_HEX.to_owned())),
+		})
 	}
 
 	/// Returns each Parity account's address and metadata.
@@ -236,12 +456,7 @@ impl Laboratory {
 
 	/// Converts an unsigned `Transaction` to a `SignedTransaction`.
 	fn sign_txn(&self, sender: Address, password: Password, chain_id: Option<u64>, txn: Transaction) -> SignedTransaction {
-		// let chain_id = self.client.signing_chain_id();
-		let txn_hash = txn.hash(chain_id);
-		let sig = self.account_provider.sign(sender, Some(password), txn_hash)
-			.unwrap_or_else(|e| panic!("[hbbft-lab] failed to sign txn: {:?}", e));
-		let unverified_txn = txn.with_signature(sig, chain_id);
-		SignedTransaction::new(unverified_txn).unwrap()
+		sign_txn(&self.account_provider, sender, password, chain_id, txn)
 	}
 
 	/// Generates a random-ish transaction.
@@ -299,8 +514,7 @@ impl Laboratory {
 			Some(ref acct) => {
 				debug!("LABORATORY: An account is below the minimum balance.");
 				if U256::from(node_id) == (self.gen_counter as u64 % validator_count).into() {
-					let receiver_nonce = client.state().nonce(&receiver)
-						.unwrap_or_else(|_| panic!("Unable to determine nonce for account: {}", receiver));
+					let receiver_nonce = client.miner().next_nonce(client, &receiver);
 
 					info!("LABORATORY: Sending funds to {:?}", acct.address);
 					// Add a contribution to initialize account:
@@ -389,6 +603,7 @@ impl Laboratory {
 		// Keep account data up to date:
 		for acct in self.accounts.accounts.iter_mut() {
 			let balance_state = client.state().balance(&acct.address).unwrap();
+
 			let nonce_state = client.state().nonce(&acct.address).unwrap();
 
 			if balance_state != acct.balance || nonce_state != acct.nonce {
@@ -426,7 +641,7 @@ impl Laboratory {
 			match client.miner().import_claimed_local_transaction(&*client, txn.into(), false) {
 				Ok(()) => {},
 				Err(TransactionError::AlreadyImported) => {},
-				// TODO: Remove this at some point:
+				// Nonce already used: Retry?
 				Err(TransactionError::Old) => {},
 				err => panic!("Unable to import generated transaction: {:?}", err),
 			}
@@ -525,105 +740,49 @@ impl Laboratory {
 			None => return,
 		};
 
-		// Deploy contract:
-		if self.contract.deploy_txn_id.is_none() {
-			let sender = self.accounts.contract_account();
-			let sender_nonce = client.state().nonce(&sender.address)
-				.unwrap_or_else(|_| panic!("Unable to determine nonce for account: {}", sender.address));
+		self.contract.stuff(&*client, &self.accounts, &*self.account_provider);
+	}
 
-			let txn_signed = self.sign_txn(sender.address, sender.password.clone(), client.signing_chain_id(),
-				Transaction {
-					action: Action::Create,
-					nonce: sender_nonce,
-					gas_price: 0.into(),
-					gas: client.miner().sensible_gas_limit(),
-					value: 0.into(),
-					data: TEST_CONTRACT_BINARY.from_hex().unwrap(),
-				}
-			);
+	/// Key generation testing.
+	fn key_gen(&mut self) {
+		if !self.hydrabadger.is_validator() { return; }
 
-			let txn_hash = txn_signed.hash();
+		let client = match self.client.upgrade() {
+			Some(client) => client,
+			None => return,
+		};
 
-			match client.miner().import_claimed_local_transaction(&*client, txn_signed.into(), false) {
-				Ok(()) => {},
-				Err(ref err) => error!("Unable to import deploy transaction: {:?}", err),
+		// The signal to instantiate key gen.
+		let mut deployed_address = None;
+
+		match self.key_gen {
+			KeyGenTester::Deployer(ref mut deployer) => {
+				deployed_address = deployer.deploy(&*client, &self.accounts, &*self.account_provider).cloned();
 			}
-
-			self.contract.deploy_txn_id = Some(TransactionId::Hash(txn_hash));
-			info!("Test contract deployed: {}", txn_hash);
-		}
-
-		if self.contract.receipt.is_none() {
-			// Wait for receipt.
-			if let Some(receipt) = client.transaction_receipt(self.contract.deploy_txn_id.clone().unwrap()) {
-				match receipt.contract_address.clone() {
-					Some(addr) => {
-						info!("Test contract created with address: {}", addr);
-						self.contract.receipt = Some(receipt);
-					},
-					None => panic!("Contract creation transaction has no contract address"),
-				}
+			KeyGenTester::KeyGen(ref mut key_gen) => {
+				key_gen.handle_events().expect("Laboratory key generation event error");
 			}
-		} else {
-			// Verify owner address.
-			let receipt = self.contract.receipt.as_ref().unwrap();
-			// let block = BlockId::Number(receipt.block_number);
-			let block = BlockId::Latest;
-			let address = receipt.contract_address.clone().unwrap();
-			let (data, decoder) = test_junk_contract::functions::get_owner::call();
-			let value = client.call_contract(block, address, data)
-				.expect("Error calling test contract");
-			let owner_addr = decoder.decode(&value)
-				.expect("Error decoding test contract return value");
-			info!("Test contract owner address: {} (orig: {})", owner_addr, self.accounts.contract_account().address);
+		};
 
-			match self.contract.new_owner_address {
-				Some((new_addr, ref txn_id)) => {
-					// Presumably this could fail if the block state changes
-					// between the above call to `::call_contract` and this
-					// call to `::transaction_receipt`.
-					match client.transaction_receipt(txn_id.clone()) {
-						Some(_receipt) => assert_eq!(owner_addr, new_addr),
-						None => assert_eq!(owner_addr, self.accounts.contract_account().address),
-					}
-				},
-				None => {
-					assert_eq!(owner_addr, self.accounts.contract_account().address)
-				},
-			}
-		}
+		// Contract has been deployed, begin key gen.
+		if let Some(contract_address) = deployed_address {
+			info!("KeyGen contract deployed. Creating KeyGen instance...");
 
-		// Modify owner address.
-		if self.contract.receipt.is_some() && self.contract.new_owner_address.is_none() {
-			let sender = self.accounts.contract_account();
-			let sender_nonce = client.state().nonce(&sender.address)
-				.unwrap_or_else(|_| panic!("Unable to determine nonce for account: {}", sender.address));
-			let contract_addr = self.contract.receipt.as_ref().unwrap().contract_address.clone().unwrap();
-			let new_addr = self.accounts.accounts()[0].address.clone();
-			let data = test_junk_contract::functions::set_owner::encode_input(new_addr);
+			let peer_public_keys: BTreeMap<Address, PublicKey> = {
+	  			let connected_peers = self.hydrabadger.peers();
+		  		let peer_pks = connected_peers
+		            .validators()
+		            .map(|p| p.pub_info().map(|(uid, _, pk)| (*uid, *pk)).unwrap())
+		            .collect();
+	            peer_pks
+	        };
 
-			let txn_signed = self.sign_txn(sender.address, sender.password.clone(), client.signing_chain_id(),
-				Transaction {
-					action: Action::Call(contract_addr),
-					nonce: sender_nonce,
-					gas_price: 0.into(),
-					gas: client.miner().sensible_gas_limit(),
-					value: 0.into(),
-					data,
-				}
-			);
+			let key_gen = KeyGen::new(peer_public_keys, self.hydrabadger.node_id(), self.hydrabadger.secret_key().clone(),
+				self.accounts.signer_account().address, self.accounts.signer_account().password.clone(),
+				contract_address, self.client.clone(), self.account_provider.clone()
+			).expect("Laboratory KeyGen creation error");
 
-			let txn_hash = txn_signed.hash();
-
-			match client.miner().import_claimed_local_transaction(&*client, txn_signed.into(), false) {
-				Ok(()) => {},
-				Err(ref err) => error!("Unable to import setOwner transaction: {:?}", err),
-			}
-
-			info!("Test contract: Setting owner address to {} (orig: {})", new_addr,
-				self.accounts.contract_account().address);
-
-			self.contract.new_owner_address = Some((new_addr, TransactionId::Hash(txn_hash)));
+			self.key_gen = KeyGenTester::KeyGen(key_gen);
 		}
 	}
 
@@ -635,7 +794,8 @@ impl Laboratory {
 		// self.play_with_blocks();
 		self.demonstrate_client_extension_methods();
 
-		self.contract_stuff();
+		// self.contract_stuff();
+		self.key_gen();
 	}
 
 	pub(super) fn into_loop(self) -> impl Future<Item = (), Error = ()> + Send {
@@ -653,9 +813,8 @@ impl Laboratory {
 
 }
 
-const TEST_CONTRACT_BINARY: &str = r#"608060405234801561001057600080fd5b5060008054600160a060020a03191633179055610142806100326000396000f30060806040526004361061004b5763ffffffff7c010000000000000000000000000000000000000000000000000000000060003504166313af40358114610050578063893d20e814610080575b600080fd5b34801561005c57600080fd5b5061007e73ffffffffffffffffffffffffffffffffffffffff600435166100be565b005b34801561008c57600080fd5b506100956100fa565b6040805173ffffffffffffffffffffffffffffffffffffffff9092168252519081900360200190f35b6000805473ffffffffffffffffffffffffffffffffffffffff191673ffffffffffffffffffffffffffffffffffffffff92909216919091179055565b60005473ffffffffffffffffffffffffffffffffffffffff16905600a165627a7a72305820d57cdcf8acc8736a2ad737c6c4b5b69e7fefe49b812f7a110f52cfb31b819b4a0029"#;
+const TEST_CONTRACT_BINARY_HEX: &str = r#"608060405234801561001057600080fd5b50336000806101000a81548173ffffffffffffffffffffffffffffffffffffffff021916908373ffffffffffffffffffffffffffffffffffffffff1602179055506101e6806100606000396000f30060806040526004361061004c576000357c0100000000000000000000000000000000000000000000000000000000900463ffffffff16806313af403514610051578063893d20e814610094575b600080fd5b34801561005d57600080fd5b50610092600480360381019080803573ffffffffffffffffffffffffffffffffffffffff1690602001909291905050506100eb565b005b3480156100a057600080fd5b506100a9610191565b604051808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390f35b806000806101000a81548173ffffffffffffffffffffffffffffffffffffffff021916908373ffffffffffffffffffffffffffffffffffffffff1602179055507f50146d0e3c60aa1d17a70635b05494f864e86144a2201275021014fbf08bafe281604051808273ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200191505060405180910390a150565b60008060009054906101000a900473ffffffffffffffffffffffffffffffffffffffff169050905600a165627a7a723058202cb3390de0ee669d0000678a4511a3009a06532fe8422db259cc84102f137ef20029"#;
 
-const TEST_CONTRACT_GAS: usize = 4700000;
 
 /*********************** TEST CONTRACT SOURCE **********************
 
@@ -668,12 +827,17 @@ contract MyContract {
         owner = msg.sender;
     }
 
+    event OwnerSet(
+        address newOwner
+    );
+
     function getOwner() public constant returns(address) {
         return owner;
     }
 
     function setOwner(address newOwner) public {
         owner = newOwner;
+        emit OwnerSet(newOwner);
     }
 }
 

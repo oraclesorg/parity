@@ -4,7 +4,7 @@
 
 mod daemon;
 mod laboratory;
-mod keygen;
+mod key_gen;
 
 use std::str::FromStr;
 use std::collections::HashSet;
