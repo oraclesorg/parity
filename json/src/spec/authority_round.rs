@@ -21,6 +21,13 @@ use uint::Uint;
 use bytes::Bytes;
 use super::ValidatorSet;
 
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ConsensusKind {
+	Poa,
+	Pos,
+}
+
 /// Authority params deserialization.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -58,6 +65,8 @@ pub struct AuthorityRoundParams {
 	pub maximum_empty_steps: Option<Uint>,
 	/// Strict validation of empty steps transition block.
 	pub strict_empty_steps_transition: Option<Uint>,
+	/// Sets whether Aura will use Proof of Authority (PoA) or Proof of Stake (PoS) consensus.
+	pub consensus_kind: Option<ConsensusKind>,
 }
 
 /// Authority engine deserialization.

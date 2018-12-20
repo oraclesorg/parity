@@ -31,7 +31,7 @@ use engines::{Engine, Seal, EngineError, ConstructedVerifier};
 use engines::block_reward;
 use engines::block_reward::{BlockRewardContract, RewardKind};
 use error::{Error, ErrorKind, BlockError};
-use ethjson;
+use ethjson::{self, spec::authority_round::ConsensusKind};
 use machine::{AuxiliaryData, Call, EthereumMachine};
 use hash::keccak;
 use super::signer::EngineSigner;
@@ -84,6 +84,8 @@ pub struct AuthorityRoundParams {
 	pub maximum_empty_steps: usize,
 	/// Transition block to strict empty steps validation.
 	pub strict_empty_steps_transition: u64,
+	/// Sets whether Aura will use Proof of Authority (PoA) or Proof of Stake (PoS) consensus.
+	pub consensus_kind: ConsensusKind,
 }
 
 const U16_MAX: usize = ::std::u16::MAX as usize;
@@ -114,6 +116,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			empty_steps_transition: p.empty_steps_transition.map_or(u64::max_value(), |n| ::std::cmp::max(n.into(), 1)),
 			maximum_empty_steps: p.maximum_empty_steps.map_or(0, Into::into),
 			strict_empty_steps_transition: p.strict_empty_steps_transition.map_or(0, Into::into),
+			consensus_kind: p.consensus_kind.unwrap_or(ConsensusKind::Poa),
 		}
 	}
 }
@@ -427,6 +430,7 @@ pub struct AuthorityRound {
 	empty_steps_transition: u64,
 	strict_empty_steps_transition: u64,
 	maximum_empty_steps: usize,
+	consensus_kind: ConsensusKind,
 	machine: EthereumMachine,
 }
 
@@ -680,6 +684,7 @@ impl AuthorityRound {
 				empty_steps_transition: our_params.empty_steps_transition,
 				maximum_empty_steps: our_params.maximum_empty_steps,
 				strict_empty_steps_transition: our_params.strict_empty_steps_transition,
+				consensus_kind: our_params.consensus_kind,
 				machine: machine,
 			});
 
