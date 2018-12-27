@@ -49,6 +49,7 @@ use types::ancestry_action::AncestryAction;
 use unexpected::{Mismatch, OutOfBounds};
 
 mod finality;
+mod randomness;
 
 /// `AuthorityRound` params.
 pub struct AuthorityRoundParams {
