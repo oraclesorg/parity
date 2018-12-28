@@ -87,7 +87,7 @@ impl ValidatorSet for TestSet {
 		1
 	}
 
-	fn report_malicious(&self, _validator: &Address, _set_block: BlockNumber, block: BlockNumber, _proof: Bytes) {
+	fn report_malicious(&self, _validator: &Address, _set_block: BlockNumber, block: BlockNumber, signer: &mut dyn FnMut(H256) -> Signature) {
 		self.last_malicious.store(block as usize, AtomicOrdering::SeqCst)
 	}
 

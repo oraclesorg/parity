@@ -1253,7 +1253,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			|| (header.number() >= self.validate_step_transition && step <= parent_step) {
 			trace!(target: "engine", "Multiple blocks proposed for step {}.", parent_step);
 
-			self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
+			self.validators.report_malicious(header.author(), set_number, header.number(), &mut |hash| self.sign(hash).expect("bug"));
 			Err(EngineError::DoubleVote(*header.author()))?;
 		}
 

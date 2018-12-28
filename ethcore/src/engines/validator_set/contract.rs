@@ -18,6 +18,7 @@
 /// It can also report validators for misbehaviour with two levels: `reportMalicious` and `reportBenign`.
 
 use std::sync::Weak;
+use std::ops::Deref;
 
 use bytes::Bytes;
 use ethereum_types::{H256, Address};
@@ -27,6 +28,11 @@ use types::BlockNumber;
 use types::header::Header;
 
 use client::EngineClient;
+use byteorder::{ByteOrder, LittleEndian};
+use keccak_hasher::KeccakHasher;
+
+use hashdb::Hasher;
+use ethkey::{sign, Signature};
 
 use super::{ValidatorSet, SimpleList, SystemCall};
 use super::safe_contract::ValidatorSafeContract;
@@ -109,8 +115,22 @@ impl ValidatorSet for ValidatorContract {
 		self.validators.count_with_caller(bh, caller)
 	}
 
-	fn report_malicious(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber, proof: Bytes) {
-		let data = validator_report::functions::report_malicious::encode_input(*address, block, proof);
+	fn report_malicious(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber, signer: &mut dyn FnMut(H256) -> Signature) {
+		let message = {
+			let mut buf = vec![0; 52];
+			address.copy_to(&mut buf[..20]);
+			LittleEndian::write_u64(&mut buf[20..28], block);
+			buf
+		};
+
+		let signature = {
+			let signature = signer(KeccakHasher::hash(&message));
+			let mut v = Vec::with_capacity(signature.len());
+			v.extend_from_slice(signature.deref());
+			v
+		};
+
+		let data = validator_report::functions::report_malicious_validator::encode_input(message, signature);
 		match self.transact(data) {
 			Ok(_) => warn!(target: "engine", "Reported malicious validator {}", address),
 			Err(s) => warn!(target: "engine", "Validator {} could not be reported {}", address, s),
