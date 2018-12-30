@@ -1,5 +1,7 @@
 use ethereum_types::Address;
 
+use_contract!(foo, "res/contracts/authority_round_random.json");
+
 /// Validated randomness phase state.
 ///
 /// The process of generating random numbers is a simple finite state machine:
