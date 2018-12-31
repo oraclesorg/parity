@@ -4,11 +4,15 @@
 
 use ethabi::{Bytes, Hash};
 use ethereum_types::{Address, U256};
+use hash::keccak;
 use rand::Rng;
 
 use super::util::{BoundContract, CallError};
 
-pub type Secret = U256;
+/// Secret type expected by the contract.
+// Note: Conversion from `U256` back into `[u8; 32]` is cumbersome (missing implementations), for
+//       this reason we store the raw buffers.
+pub type Secret = [u8; 32];
 
 use_contract!(aura_random, "res/authority_round_random.json");
 
@@ -173,8 +177,9 @@ impl RandomnessPhase {
 				// once per round of randomness generation.
 				let mut buf = [0u8; 32];
 				rng.fill_bytes(&mut buf);
+
 				let secret: Secret = buf.into();
-				let secret_hash: Hash = unimplemented!();
+				let secret_hash: Hash = keccak(secret.as_ref());
 
 				// Currently the PoS contracts are setup in a way that only the system address can
 				// commit hashes, so we need to sign "manually".
@@ -195,7 +200,7 @@ impl RandomnessPhase {
 				let secret = stored_secret.ok_or(PhaseError::LostSecret)?;
 
 				// We hash our secret again to check against the already committed hash:
-				let secret_hash: Hash = unimplemented!();
+				let secret_hash: Hash = keccak(secret.as_ref());
 				let committed_hash: Hash = contract
 					.call_const(aura_random::functions::get_commit::call(round, our_address))
 					.map_err(PhaseError::LoadFailed)?;
