@@ -4,7 +4,7 @@ use ethereum_types::Address;
 
 use client::{BlockId, CallContract, Client};
 
-use_contract!(aura_random, "res/contracts/authority_round_random.json");
+use_contract!(aura_random, "res/authority_round_random.json");
 
 /// Validated randomness phase state.
 ///
