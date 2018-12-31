@@ -2,10 +2,13 @@
 //!
 //! This module contains the support code for the on-chain randomness generation used by AuRa.
 
-use ethereum_types::Address;
+use ethabi::{Bytes, Hash};
+use ethereum_types::{Address, U256};
+use rand::Rng;
 
 use super::util::{BoundContract, CallError};
-use client::{BlockId, Client};
+
+pub type Secret = U256;
 
 use_contract!(aura_random, "res/authority_round_random.json");
 
@@ -34,26 +37,38 @@ use_contract!(aura_random, "res/authority_round_random.json");
 /// +--------------+                              +---------------+
 ///
 ///
-/// Phase transitions are performed by the smart contract and simply queried by the engine, while
-/// all calls are made directly.
-#[derive(Clone, Copy, Debug)]
+/// Phase transitions are performed by the smart contract and simply queried by the engine.
+///
+/// A typical case of using `RandomnessPhase` is:
+///
+/// 1. `RandomnessPhase::load()` the phase from the blockchain data.
+/// 2. Load the stored secret.
+/// 3. Call `RandomnessPhase::advance()` with the stored secret.
+/// 4. Update the stored secret with the return value.
+#[derive(Debug)]
 pub enum RandomnessPhase {
+	// NOTE: Some states include information already gathered during `load` (e.g. `our_address`,
+	//       `round`) for efficiency reasons.
 	/// Waiting for the next phase.
 	///
 	/// This state indicates either the successful revelation in this round or having missed the
 	/// window to make a commitment.
 	Waiting,
 	/// Indicates a commitment is possible, but still missing.
-	BeforeCommit,
+	BeforeCommit { our_address: Address },
 	/// Indicates a successful commitment, waiting for the commit phase to end.
 	Committed,
 	/// Indicates revealing is expected as the next step.
-	Reveal,
+	Reveal { our_address: Address, round: U256 },
 }
 
 /// Phase loading error for randomness generation state machine.
 ///
-/// This error usually indicates a bug in either the smart contract or the phase loading function.
+/// This error usually indicates a bug in either the smart contract, the phase loading function or
+/// some state being lost.
+///
+/// The `LostSecret` and `StaleSecret` will usually result in punishment by the contract or the
+/// other validators.
 #[derive(Debug)]
 pub enum PhaseError {
 	/// The smart contract reported a phase as both commitment and reveal phase.
@@ -63,6 +78,12 @@ pub enum PhaseError {
 	RevealedInCommit,
 	/// Calling a contract to determine the phase failed.
 	LoadFailed(CallError),
+	/// Failed to schedule a transaction to call a contract.
+	TransactionFailed(CallError),
+	/// When trying to reveal the secret, no secret was found.
+	LostSecret,
+	/// A secret was stored, but it did not match the committed hash.
+	StaleSecret,
 }
 
 impl RandomnessPhase {
@@ -72,13 +93,9 @@ impl RandomnessPhase {
 	/// handled (that is, the phase and whether or not the current validator still needs to send
 	/// commitments or reveal secrets).
 	pub fn load(
-		client: &Client,
-		block_id: BlockId,
-		contract_address: Address,
+		contract: &BoundContract,
 		our_address: Address,
 	) -> Result<RandomnessPhase, PhaseError> {
-		let contract = BoundContract::bind(client, block_id, contract_address);
-
 		// Determine the current round and which phase we are in.
 		let round = contract
 			.call_const(aura_random::functions::current_collect_round::call())
@@ -115,7 +132,7 @@ impl RandomnessPhase {
 			}
 
 			if !committed {
-				Ok(RandomnessPhase::BeforeCommit)
+				Ok(RandomnessPhase::BeforeCommit { our_address })
 			} else {
 				Ok(RandomnessPhase::Committed)
 			}
@@ -127,9 +144,77 @@ impl RandomnessPhase {
 			}
 
 			if !revealed {
-				Ok(RandomnessPhase::Reveal)
+				Ok(RandomnessPhase::Reveal { our_address, round })
 			} else {
 				Ok(RandomnessPhase::Waiting)
+			}
+		}
+	}
+
+	/// Advance the randomness state, if necessary.
+	///
+	/// Creates the transaction necessary to advance the randomness contract's state and schedules
+	/// them to run on the `client` inside `contract`. The `stored_secret` must be managed by the
+	/// the caller, passed in each time `advance` is called and replaced with the returned value
+	/// each time the function returns successfully.
+	///
+	/// **Warning**: The `advance()` function should be called only once per block state; otherwise
+	///              spurious transactions resulting in punishments might be executed.
+	pub fn advance<R: Rng>(
+		self,
+		contract: &BoundContract,
+		stored_secret: Option<Secret>,
+		rng: &mut R,
+	) -> Result<Option<Secret>, PhaseError> {
+		match self {
+			RandomnessPhase::Waiting | RandomnessPhase::Committed => Ok(stored_secret),
+			RandomnessPhase::BeforeCommit { our_address } => {
+				// We generate a new secret to submit each time, this function will only be called
+				// once per round of randomness generation.
+				let mut buf = [0u8; 32];
+				rng.fill_bytes(&mut buf);
+				let secret: Secret = buf.into();
+				let secret_hash: Hash = unimplemented!();
+
+				// Currently the PoS contracts are setup in a way that only the system address can
+				// commit hashes, so we need to sign "manually".
+				let signature: Bytes = unimplemented!();
+
+				// Schedule the transaction that commits the hash.
+				contract
+					.schedule_call_transaction(aura_random::functions::commit_hash::call(
+						secret_hash,
+						signature,
+					))
+					.map_err(PhaseError::TransactionFailed)?;
+
+				// Store the newly generated secret.
+				Ok(Some(secret))
+			}
+			RandomnessPhase::Reveal { round, our_address } => {
+				let secret = stored_secret.ok_or(PhaseError::LostSecret)?;
+
+				// We hash our secret again to check against the already committed hash:
+				let secret_hash: Hash = unimplemented!();
+				let committed_hash: Hash = contract
+					.call_const(aura_random::functions::get_commit::call(round, our_address))
+					.map_err(PhaseError::LoadFailed)?;
+
+				if (secret_hash != committed_hash) {
+					return Err(PhaseError::StaleSecret);
+				}
+
+				// We are now sure that we have the correct secret and can reveal it.
+				let signature: Bytes = unimplemented!();
+				contract
+					.schedule_call_transaction(aura_random::functions::reveal_secret::call(
+						secret, signature,
+					))
+					.map_err(PhaseError::TransactionFailed)?;
+
+				// We still pass back the secret -- if anything fails later down the line, we can
+				// resume by simply creating another transaction.
+				Ok(Some(secret))
 			}
 		}
 	}
