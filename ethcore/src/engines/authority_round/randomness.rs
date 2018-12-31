@@ -1,6 +1,11 @@
 //! On-chain randomness generation for authority round
 //!
-//! This module contains the support code for the on-chain randomness generation used by AuRa.
+//! This module contains the support code for the on-chain randomness generation used by AuRa. Its
+//! core is the finite state machine `RandomnessPhase`, which can be loaded from the blockchain
+//! state, then asked to perform potentially necessary transaction afterwards using the `advance()`
+//! method.
+//!
+//! No additional state is kept inside the `RandomnessPhase`, it must be passed in each time.
 
 use ethabi::{Bytes, Hash};
 use ethereum_types::{Address, U256};
