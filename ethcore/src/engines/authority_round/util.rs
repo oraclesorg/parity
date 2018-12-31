@@ -71,8 +71,6 @@ impl<'a> BoundContract<'a> {
 			.map_err(CallError::CallFailed)?;
 
 		// Decode the result and return it.
-		// NOTE: We return an already wrapped error here, ideally this function could be generalized by
-		//       removing the `map_err` and sticking it elsewhere.
 		output_decoder
 			.decode(call_return.as_slice())
 			.map_err(CallError::DecodeFailed)
