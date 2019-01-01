@@ -33,6 +33,7 @@ use keccak_hasher::KeccakHasher;
 
 use hashdb::Hasher;
 use ethkey::{sign, Signature};
+use ethjson::spec::authority_round::ConsensusKind;
 
 use super::{ValidatorSet, SimpleList, SystemCall};
 use super::safe_contract::ValidatorSafeContract;
@@ -47,10 +48,10 @@ pub struct ValidatorContract {
 }
 
 impl ValidatorContract {
-	pub fn new(contract_address: Address) -> Self {
+	pub fn new(contract_address: Address, consensus_kind: ConsensusKind) -> Self {
 		ValidatorContract {
 			contract_address,
-			validators: ValidatorSafeContract::new(contract_address),
+			validators: ValidatorSafeContract::new(contract_address, consensus_kind),
 			client: RwLock::new(None),
 		}
 	}
@@ -153,16 +154,18 @@ mod tests {
 	use test_helpers::generate_dummy_client_with_spec_and_accounts;
 	use client::{BlockChainClient, ChainInfo, BlockInfo, CallContract};
 	use super::super::ValidatorSet;
-	use super::ValidatorContract;
+	use super::{ValidatorContract, ConsensusKind};
 
 	#[test]
 	fn fetches_validators() {
 		let client = generate_dummy_client_with_spec_and_accounts(Spec::new_validator_contract, None);
-		let vc = Arc::new(ValidatorContract::new("0000000000000000000000000000000000000005".parse::<Address>().unwrap()));
-		vc.register_client(Arc::downgrade(&client) as _);
-		let last_hash = client.best_block_header().hash();
-		assert!(vc.contains(&last_hash, &"7d577a597b2742b498cb5cf0c26cdcd726d39e6e".parse::<Address>().unwrap()));
-		assert!(vc.contains(&last_hash, &"82a978b3f5962a5b0957d9ee9eef472ee55b42f1".parse::<Address>().unwrap()));
+		for &i in &[ConsensusKind::Poa, ConsensusKind::Pos] {
+			let vc = Arc::new(ValidatorContract::new("0000000000000000000000000000000000000005".parse::<Address>().unwrap(), i));
+			vc.register_client(Arc::downgrade(&client) as _);
+			let last_hash = client.best_block_header().hash();
+			assert!(vc.contains(&last_hash, &"7d577a597b2742b498cb5cf0c26cdcd726d39e6e".parse::<Address>().unwrap()));
+			assert!(vc.contains(&last_hash, &"82a978b3f5962a5b0957d9ee9eef472ee55b42f1".parse::<Address>().unwrap()));
+		}
 	}
 
 	#[test]

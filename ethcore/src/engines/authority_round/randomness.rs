@@ -19,7 +19,7 @@ use super::util::{BoundContract, CallError};
 //       this reason we store the raw buffers.
 pub type Secret = [u8; 32];
 
-use_contract!(aura_random, "res/authority_round_random.json");
+use_contract!(aura_random, "res/contracts/authority_round_random.json");
 
 /// Validated randomness phase state.
 ///
