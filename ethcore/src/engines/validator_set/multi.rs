@@ -25,7 +25,7 @@ use header::{BlockNumber, Header};
 use client::EngineClient;
 use machine::{AuxiliaryData, Call, EthereumMachine};
 use super::{SystemCall, ValidatorSet};
-use ethkey::Signature;
+use super::super::validator_set::MaliciousProofType;
 use error::Error;
 
 type BlockNumberLookup = Box<Fn(BlockId) -> Result<BlockNumber, String> + Send + Sync + 'static>;
@@ -129,7 +129,7 @@ impl ValidatorSet for Multi {
 		validator: &Address,
 		set_block: BlockNumber,
 		block: BlockNumber,
-		signer: &dyn Fn(H256) -> Result<Signature, Error>
+		signer: MaliciousProofType,
 	) -> Result<(), Error> {
 		self.correct_set_by_number(set_block).1.report_malicious(validator, set_block, block, signer)
 	}

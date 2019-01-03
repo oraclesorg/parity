@@ -55,6 +55,13 @@ impl ValidatorContract {
 	}
 }
 
+pub enum MaliciousProofType<'a> {
+	/// A signer, for use with Proof of Authority (POA).
+	Signer(&'a dyn Fn(H256) -> Result<Signature, ::error::Error>),
+	/// A binary proof, for use with Proof of Stake (POS).
+	Proof(Bytes),
+}
+
 impl ValidatorContract {
 	fn transact(&self, data: Bytes) -> Result<(), String> {
 		let client = self.client.read().as_ref()
@@ -119,8 +126,8 @@ impl ValidatorSet for ValidatorContract {
 		address: &Address,
 		_set_block: BlockNumber,
 		block: BlockNumber,
-		signer: &dyn Fn(H256) -> Result<Signature, Error>
-	) -> Result<(), Error> {
+		signer: MaliciousProofType,
+	) -> Result<(), ::error::Error> {
 		let message = {
 			let mut buf = vec![0; 52];
 			address.copy_to(&mut buf[..20]);
@@ -128,14 +135,19 @@ impl ValidatorSet for ValidatorContract {
 			buf
 		};
 
-		let signature = {
-			let signature = signer(KeccakHasher::hash(&message))?;
-			let mut v = Vec::with_capacity(signature.len());
-			v.extend_from_slice(signature.deref());
-			v
+		let data = match signer {
+			MaliciousProofType::Signer(signer) => {
+				let signature = signer(KeccakHasher::hash(&message))?.to_vec();
+				validator_report::functions::report_malicious_validator::encode_input(
+					message,
+					signature,
+				)
+			}
+			MaliciousProofType::Proof(proof) => {
+				validator_report::functions::report_malicious::encode_input(*address, block, proof)
+			}
 		};
 
-		let data = validator_report::functions::report_malicious_validator::encode_input(message, signature);
 		Ok(match self.transact(data) {
 			Ok(_) => warn!(target: "engine", "Reported malicious validator {}", address),
 			Err(s) => warn!(target: "engine", "Validator {} could not be reported {}", address, s),

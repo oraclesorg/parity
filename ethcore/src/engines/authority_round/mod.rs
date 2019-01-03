@@ -36,7 +36,7 @@ use machine::{AuxiliaryData, Call, EthereumMachine};
 use hash::keccak;
 use header::{Header, BlockNumber, ExtendedHeader};
 use super::signer::EngineSigner;
-use super::validator_set::{ValidatorSet, SimpleList, new_validator_set};
+use super::validator_set::{ValidatorSet, SimpleList, new_validator_set, MaliciousProofType};
 use self::finality::RollingFinality;
 use ethkey::{self, Password, Signature};
 use io::{IoContext, IoHandler, TimerToken, IoService};
@@ -1251,8 +1251,11 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		if step == parent_step
 			|| (header.number() >= self.validate_step_transition && step <= parent_step) {
 			trace!(target: "engine", "Multiple blocks proposed for step {}.", parent_step);
-
-			self.validators.report_malicious(header.author(), set_number, header.number(), &|hash| self.sign(hash))?;
+			let sign = |hash| self.sign(hash);
+			self.validators.report_malicious(header.author(), set_number, header.number(), match self.consensus_kind {
+				ConsensusKind::Poa => MaliciousProofType::Signer(&sign),
+				ConsensusKind::Pos => MaliciousProofType::Proof(Default::default()),
+			})?;
 			Err(EngineError::DoubleVote(*header.author()))?;
 		}
 

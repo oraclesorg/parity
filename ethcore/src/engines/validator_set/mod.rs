@@ -40,6 +40,7 @@ use self::multi::Multi;
 use super::SystemCall;
 use ethkey::Signature;
 use error::Error;
+pub use self::contract::MaliciousProofType;
 
 /// Creates a validator set from spec.
 pub fn new_validator_set(spec: ValidatorSpec) -> Box<ValidatorSet> {
@@ -140,7 +141,7 @@ pub trait ValidatorSet: Send + Sync + 'static {
 		_validator: &Address,
 		_set_block: BlockNumber,
 		_block: BlockNumber,
-		_signer: &dyn Fn(H256) -> Result<Signature, Error>
+		_signer: MaliciousProofType,
 	) -> Result<(), Error> {
 		Ok(())
 	}
