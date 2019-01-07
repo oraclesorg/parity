@@ -30,6 +30,7 @@ use client::EngineClient;
 use machine::{AuxiliaryData, Call, EthereumMachine};
 use super::{SystemCall, ValidatorSet};
 use ethkey::Signature;
+use error::Error;
 
 type BlockNumberLookup = Box<Fn(BlockId) -> Result<BlockNumber, String> + Send + Sync + 'static>;
 
@@ -78,7 +79,7 @@ impl ValidatorSet for Multi {
 			.unwrap_or(Box::new(|_, _| Err("No validator set for given ID.".into())))
 	}
 
-	fn on_epoch_begin(&self, _first: bool, header: &Header, call: &mut SystemCall) -> Result<(), ::error::Error> {
+	fn on_epoch_begin(&self, _first: bool, header: &Header, call: &mut SystemCall) -> Result<(), Error> {
 		let (set_block, set) = self.correct_set_by_number(header.number());
 		let first = set_block == header.number();
 
@@ -105,7 +106,7 @@ impl ValidatorSet for Multi {
 		set.signals_epoch_end(first, header, aux)
 	}
 
-	fn epoch_set(&self, _first: bool, machine: &EthereumMachine, number: BlockNumber, proof: &[u8]) -> Result<(super::SimpleList, Option<H256>), ::error::Error> {
+	fn epoch_set(&self, _first: bool, machine: &EthereumMachine, number: BlockNumber, proof: &[u8]) -> Result<(super::SimpleList, Option<H256>), Error> {
 		let (set_block, set) = self.correct_set_by_number(number);
 		let first = set_block == number;
 
@@ -127,8 +128,14 @@ impl ValidatorSet for Multi {
 			.map_or_else(usize::max_value, |set| set.count_with_caller(bh, caller))
 	}
 
-	fn report_malicious(&self, validator: &Address, set_block: BlockNumber, block: BlockNumber, signer: &mut dyn FnMut(H256) -> Signature) {
-		self.correct_set_by_number(set_block).1.report_malicious(validator, set_block, block, signer);
+	fn report_malicious(
+		&self,
+		validator: &Address,
+		set_block: BlockNumber,
+		block: BlockNumber,
+		signer: &dyn Fn(H256) -> Result<Signature, Error>
+	) -> Result<(), Error> {
+		self.correct_set_by_number(set_block).1.report_malicious(validator, set_block, block, signer)
 	}
 
 	fn report_benign(&self, validator: &Address, set_block: BlockNumber, block: BlockNumber) {
