@@ -88,8 +88,8 @@ pub struct AuthorityRoundParams {
 	pub strict_empty_steps_transition: u64,
 	/// Sets whether Aura will use Proof of Authority (PoA) or Proof of Stake (PoS) consensus.
 	pub consensus_kind: ConsensusKind,
-    /// If set, enables random number contract integration.
-    pub randomness_contract: Option<Address>,
+	/// If set, enables random number contract integration.
+	pub randomness_contract: Option<Address>,
 }
 
 const U16_MAX: usize = ::std::u16::MAX as usize;
@@ -121,7 +121,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			maximum_empty_steps: p.maximum_empty_steps.map_or(0, Into::into),
 			strict_empty_steps_transition: p.strict_empty_steps_transition.map_or(0, Into::into),
 			consensus_kind: p.consensus_kind.unwrap_or(ConsensusKind::Poa),
-            randomness_contract: None,
+			randomness_contract: None,
 		}
 	}
 }
@@ -1804,16 +1804,16 @@ mod tests {
 		assert_eq!(aura.maximum_uncle_count(100), 0);
 	}
 
-    #[test]
-    #[should_panic(expected="counter is too high")]
-    fn test_counter_increment_too_high() {
-        use super::Step;
-        let step = Step {
-            calibrate: false,
-            inner: AtomicUsize::new(::std::usize::MAX),
-            duration: 1,
-        };
-        step.increment();
+	#[test]
+	#[should_panic(expected="counter is too high")]
+	fn test_counter_increment_too_high() {
+		use super::Step;
+		let step = Step {
+			calibrate: false,
+			inner: AtomicUsize::new(::std::usize::MAX),
+			duration: 1,
+		};
+		step.increment();
 	}
 
 	#[test]
