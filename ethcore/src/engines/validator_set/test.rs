@@ -25,7 +25,9 @@ use ethereum_types::{H256, Address};
 use heapsize::HeapSizeOf;
 use types::BlockNumber;
 use types::header::Header;
+use ethkey::Signature;
 
+use error::Error;
 use machine::{AuxiliaryData, Call, EthereumMachine};
 use super::{ValidatorSet, SimpleList};
 

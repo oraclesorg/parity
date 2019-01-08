@@ -7,6 +7,8 @@
 //!
 //! No additional state is kept inside the `RandomnessPhase`, it must be passed in each time.
 
+use account_provider::SignError;
+use engines::signer::EngineSigner;
 use ethabi::{Bytes, Hash};
 use ethereum_types::{Address, U256};
 use hash::keccak;
@@ -91,6 +93,8 @@ pub enum PhaseError {
 	TransactionFailed(CallError),
 	/// When trying to reveal the secret, no secret was found.
 	LostSecret,
+	/// Failed to sign our commitment or secret.
+	Sign(SignError),
 	/// A secret was stored, but it did not match the committed hash.
 	StaleSecret,
 }
@@ -173,11 +177,12 @@ impl RandomnessPhase {
 		self,
 		contract: &BoundContract,
 		stored_secret: Option<Secret>,
+		signer: &EngineSigner,
 		rng: &mut R,
 	) -> Result<Option<Secret>, PhaseError> {
 		match self {
 			RandomnessPhase::Waiting | RandomnessPhase::Committed => Ok(stored_secret),
-			RandomnessPhase::BeforeCommit { our_address } => {
+			RandomnessPhase::BeforeCommit { .. } => {
 				// We generate a new secret to submit each time, this function will only be called
 				// once per round of randomness generation.
 				let mut buf = [0u8; 32];
@@ -188,7 +193,8 @@ impl RandomnessPhase {
 
 				// Currently the PoS contracts are setup in a way that only the system address can
 				// commit hashes, so we need to sign "manually".
-				let signature: Bytes = unimplemented!();
+				let signature: Bytes =
+					signer.sign(secret_hash).map_err(PhaseError::Sign)?.as_ref().into();
 
 				// Schedule the transaction that commits the hash.
 				contract
@@ -210,12 +216,13 @@ impl RandomnessPhase {
 					.call_const(aura_random::functions::get_commit::call(round, our_address))
 					.map_err(PhaseError::LoadFailed)?;
 
-				if (secret_hash != committed_hash) {
+				if secret_hash != committed_hash {
 					return Err(PhaseError::StaleSecret);
 				}
 
 				// We are now sure that we have the correct secret and can reveal it.
-				let signature: Bytes = unimplemented!();
+				let signature: Bytes =
+					signer.sign(secret.into()).map_err(PhaseError::Sign)?.as_ref().into();
 				contract
 					.schedule_call_transaction(aura_random::functions::reveal_secret::call(
 						secret, signature,

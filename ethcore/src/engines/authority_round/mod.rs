@@ -26,7 +26,7 @@ use std::time::{UNIX_EPOCH, SystemTime, Duration};
 
 use account_provider::AccountProvider;
 use block::*;
-use client::EngineClient;
+use client::{BlockId, EngineClient};
 use engines::{Engine, Seal, EngineError, ConstructedVerifier};
 use engines::block_reward;
 use engines::block_reward::{BlockRewardContract, RewardKind};
@@ -437,6 +437,11 @@ pub struct AuthorityRound {
 	maximum_empty_steps: usize,
 	consensus_kind: ConsensusKind,
 	machine: EthereumMachine,
+	/// The stored secret contribution to randomness.
+	// TODO: Only used in PoS. Maybe make part of `ConsensusKind`? Or tie together with `randomness_contract`?
+	rand_secret: RwLock<Option<randomness::Secret>>,
+	/// If set, enables random number contract integration.
+	randomness_contract: Option<Address>,
 }
 
 // header-chain validator.
@@ -691,6 +696,8 @@ impl AuthorityRound {
 				strict_empty_steps_transition: our_params.strict_empty_steps_transition,
 				consensus_kind: our_params.consensus_kind,
 				machine: machine,
+				rand_secret: Default::default(),
+				randomness_contract: our_params.randomness_contract,
 			});
 
 		// Do not initialize timeouts for tests.
@@ -1144,6 +1151,28 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		epoch_begin: bool,
 		_ancestry: &mut Iterator<Item=ExtendedHeader>,
 	) -> Result<(), Error> {
+		// Random number generation
+		// TODO: Is this the right place to do this?
+		if let (Some(contract_addr), Some(our_addr)) = (self.randomness_contract, self.signer.read().address()) {
+			let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
+				Some(client) => client,
+				None => {
+					debug!(target: "engine", "Unable to close block: missing client ref.");
+					return Err(EngineError::RequiresClient.into())
+				},
+			};
+			let block_id = BlockId::Number(block.header.number());
+			let mut contract = util::BoundContract::bind(&*client, block_id, contract_addr);
+            // TODO: How should these errors be handled?
+			let phase = randomness::RandomnessPhase::load(&contract, our_addr)
+				.map_err(|err| EngineError::FailedSystemCall(format!("Randomness error: {:?}", err)))?;
+			let secret = *self.rand_secret.read();
+			let mut rng = ::rand::OsRng::new()?;
+			// TODO: Add new transaction to the block?
+			*self.rand_secret.write() = phase.advance(&contract, secret, &*self.signer.read(), &mut rng)
+				.map_err(|err| EngineError::FailedSystemCall(format!("Randomness error: {:?}", err)))?;
+		}
+
 		// with immediate transitions, we don't use the epoch mechanism anyway.
 		// the genesis is always considered an epoch, but we ignore it intentionally.
 		if self.immediate_transitions || !epoch_begin { return Ok(()) }
@@ -1543,7 +1572,6 @@ mod tests {
 	use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 	use hash::keccak;
 	use ethereum_types::{Address, H520, H256, U256};
-	use ethjson::spec::authority_round::ConsensusKind;
 	use ethkey::Signature;
 	use types::header::Header;
 	use rlp::encode;
@@ -1558,7 +1586,7 @@ mod tests {
 	use engines::{Seal, Engine, EngineError, EthEngine};
 	use engines::validator_set::{TestSet, SimpleList};
 	use error::{Error, ErrorKind};
-	use super::{AuthorityRoundParams, AuthorityRound, EmptyStep, SealedEmptyStep, calculate_score};
+	use super::{AuthorityRoundParams, AuthorityRound, EmptyStep, SealedEmptyStep, calculate_score, ConsensusKind};
 
 	fn aura<F>(f: F) -> Arc<AuthorityRound> where
 		F: FnOnce(&mut AuthorityRoundParams),
@@ -1579,6 +1607,7 @@ mod tests {
 			block_reward_contract: Default::default(),
 			strict_empty_steps_transition: 0,
 			consensus_kind: ConsensusKind::Poa,
+			randomness_contract: None,
 		};
 
 		// mutate aura params

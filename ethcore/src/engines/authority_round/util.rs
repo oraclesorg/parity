@@ -7,8 +7,8 @@ use std::fmt;
 use ethabi;
 use ethereum_types::Address;
 
-use client::{BlockId, CallContract, Client, EngineClient};
-use transaction;
+use client::{BlockId, EngineClient};
+use types::transaction;
 
 /// A contract bound to a client and block number.
 ///
@@ -16,7 +16,7 @@ use transaction;
 /// These three parts are enough to call a contract's function; return values are automatically
 /// decoded.
 pub struct BoundContract<'a> {
-	client: &'a Client,
+	client: &'a EngineClient,
 	block_id: BlockId,
 	contract_addr: Address,
 }
@@ -37,7 +37,7 @@ pub enum CallError {
 impl<'a> fmt::Debug for BoundContract<'a> {
 	fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
 		fmt.debug_struct("BoundContract")
-			.field("client", &(self.client as *const Client))
+			.field("client", &(self.client as *const EngineClient))
 			.field("block_id", &self.block_id)
 			.field("contract_addr", &self.contract_addr)
 			.finish()
@@ -47,7 +47,7 @@ impl<'a> fmt::Debug for BoundContract<'a> {
 impl<'a> BoundContract<'a> {
 	/// Create a new `BoundContract`.
 	#[inline]
-	pub fn bind(client: &Client, block_id: BlockId, contract_addr: Address) -> BoundContract {
+	pub fn bind(client: &EngineClient, block_id: BlockId, contract_addr: Address) -> BoundContract {
 		BoundContract {
 			client,
 			block_id,
@@ -67,6 +67,8 @@ impl<'a> BoundContract<'a> {
 
 		let call_return = self
 			.client
+			.as_full_client()
+			.ok_or(CallError::NotFullClient)?
 			.call_contract(self.block_id, self.contract_addr, data)
 			.map_err(CallError::CallFailed)?;
 
