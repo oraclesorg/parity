@@ -1538,6 +1538,7 @@ mod tests {
 	use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 	use hash::keccak;
 	use ethereum_types::{Address, H520, H256, U256};
+	use ethjson::spec::authority_round::ConsensusKind;
 	use ethkey::Signature;
 	use types::header::Header;
 	use rlp::encode;
@@ -1572,6 +1573,7 @@ mod tests {
 			block_reward_contract_transition: 0,
 			block_reward_contract: Default::default(),
 			strict_empty_steps_transition: 0,
+			consensus_kind: ConsensusKind::Poa,
 		};
 
 		// mutate aura params
