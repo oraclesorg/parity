@@ -198,7 +198,7 @@ impl RandomnessPhase {
 
 				// Schedule the transaction that commits the hash.
 				contract
-					.schedule_call_transaction(aura_random::functions::commit_hash::call(
+					.schedule_service_transaction(aura_random::functions::commit_hash::call(
 						secret_hash,
 						signature,
 					))
@@ -224,7 +224,7 @@ impl RandomnessPhase {
 				let signature: Bytes =
 					signer.sign(secret.into()).map_err(PhaseError::Sign)?.as_ref().into();
 				contract
-					.schedule_call_transaction(aura_random::functions::reveal_secret::call(
+					.schedule_service_transaction(aura_random::functions::reveal_secret::call(
 						secret, signature,
 					))
 					.map_err(PhaseError::TransactionFailed)?;
