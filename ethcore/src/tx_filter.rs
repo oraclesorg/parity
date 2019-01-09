@@ -29,6 +29,7 @@ use hash::KECCAK_EMPTY;
 
 use_contract!(transact_acl_deprecated, "res/contracts/tx_acl_deprecated.json");
 use_contract!(transact_acl, "res/contracts/tx_acl.json");
+use_contract!(transact_acl_gas_price, "res/contracts/tx_acl_gas_price.json");
 
 const MAX_CACHE_SIZE: usize = 4096;
 
@@ -101,6 +102,16 @@ impl TransactionFilter {
 				match version_u64 {
 					2 => {
 						let (data, decoder) = transact_acl::functions::allowed_tx_types::call(sender, to, value);
+						client.call_contract(BlockId::Hash(*parent_hash), contract_address, data)
+							.and_then(|value| decoder.decode(&value).map_err(|e| e.to_string()))
+							.map(|(p, f)| (p.low_u32(), f))
+							.unwrap_or_else(|e| {
+								error!(target: "tx_filter", "Error calling tx permissions contract: {:?}", e);
+								(tx_permissions::NONE, true)
+							})
+					},
+					0xfffffffffffffffe => {
+						let (data, decoder) = transact_acl_gas_price::functions::allowed_tx_types::call(sender, to, value, transaction.gas_price);
 						client.call_contract(BlockId::Hash(*parent_hash), contract_address, data)
 							.and_then(|value| decoder.decode(&value).map_err(|e| e.to_string()))
 							.map(|(p, f)| (p.low_u32(), f))
