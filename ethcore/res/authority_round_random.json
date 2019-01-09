@@ -1,336 +1,328 @@
 [
    {
-      "type" : "function",
-      "outputs" : [],
-      "name" : "commitHash",
-      "stateMutability" : "nonpayable",
-      "constant" : false,
-      "payable" : false,
-      "inputs" : [
-         {
-            "type" : "bytes32",
-            "name" : "_secretHash"
-         },
-         {
-            "type" : "bytes",
-            "name" : "_signature"
-         }
-      ]
+     "constant": true,
+     "inputs": [],
+     "name": "COMMIT_PHASE_LENGTH",
+     "outputs": [
+       {
+         "name": "",
+         "type": "uint256"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "stateMutability" : "view",
-      "type" : "function",
-      "name" : "blocksProducers",
-      "outputs" : [
-         {
-            "type" : "address[]",
-            "name" : ""
-         }
-      ],
-      "payable" : false,
-      "inputs" : [
-         {
-            "type" : "uint256",
-            "name" : "_collectRound"
-         }
-      ],
-      "constant" : true
+     "constant": true,
+     "inputs": [],
+     "name": "currentRandom",
+     "outputs": [
+       {
+         "name": "",
+         "type": "uint256[]"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "type" : "function",
-      "name" : "COMMIT_PHASE_LENGTH",
-      "outputs" : [
-         {
-            "name" : "",
-            "type" : "uint256"
-         }
-      ],
-      "stateMutability" : "view",
-      "constant" : true,
-      "payable" : false,
-      "inputs" : []
+     "constant": true,
+     "inputs": [],
+     "name": "VALIDATOR_SET_CONTRACT",
+     "outputs": [
+       {
+         "name": "",
+         "type": "address"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "constant" : true,
-      "payable" : false,
-      "inputs" : [],
-      "type" : "function",
-      "name" : "currentRandom",
-      "outputs" : [
-         {
-            "type" : "uint256[]",
-            "name" : ""
-         }
-      ],
-      "stateMutability" : "view"
+     "constant": true,
+     "inputs": [],
+     "name": "COLLECT_ROUND_LENGTH",
+     "outputs": [
+       {
+         "name": "",
+         "type": "uint256"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "stateMutability" : "view",
-      "name" : "committedValidators",
-      "type" : "function",
-      "outputs" : [
-         {
-            "type" : "address[]",
-            "name" : ""
-         }
-      ],
-      "inputs" : [
-         {
-            "name" : "_collectRound",
-            "type" : "uint256"
-         }
-      ],
-      "payable" : false,
-      "constant" : true
+     "constant": false,
+     "inputs": [
+       {
+         "name": "_secretHash",
+         "type": "bytes32"
+       }
+     ],
+     "name": "commitHash",
+     "outputs": [],
+     "payable": false,
+     "stateMutability": "nonpayable",
+     "type": "function"
    },
    {
-      "payable" : false,
-      "inputs" : [
-         {
-            "type" : "uint256",
-            "name" : "_collectRound"
-         },
-         {
-            "type" : "address",
-            "name" : "_validator"
-         }
-      ],
-      "constant" : true,
-      "stateMutability" : "view",
-      "outputs" : [
-         {
-            "name" : "",
-            "type" : "bool"
-         }
-      ],
-      "type" : "function",
-      "name" : "sentReveal"
+     "constant": false,
+     "inputs": [
+       {
+         "name": "_secret",
+         "type": "uint256"
+       }
+     ],
+     "name": "revealSecret",
+     "outputs": [],
+     "payable": false,
+     "stateMutability": "nonpayable",
+     "type": "function"
    },
    {
-      "stateMutability" : "view",
-      "type" : "function",
-      "outputs" : [
-         {
-            "name" : "",
-            "type" : "bool"
-         }
-      ],
-      "name" : "isCommitPhase",
-      "inputs" : [],
-      "payable" : false,
-      "constant" : true
+     "constant": false,
+     "inputs": [
+       {
+         "name": "_currentValidator",
+         "type": "address"
+       }
+     ],
+     "name": "onBlockClose",
+     "outputs": [],
+     "payable": false,
+     "stateMutability": "nonpayable",
+     "type": "function"
    },
    {
-      "stateMutability" : "view",
-      "name" : "VALIDATOR_SET_CONTRACT",
-      "type" : "function",
-      "outputs" : [
-         {
-            "name" : "",
-            "type" : "address"
-         }
-      ],
-      "payable" : false,
-      "inputs" : [],
-      "constant" : true
+     "constant": true,
+     "inputs": [
+       {
+         "name": "_collectRound",
+         "type": "uint256"
+       }
+     ],
+     "name": "blocksProducers",
+     "outputs": [
+       {
+         "name": "",
+         "type": "address[]"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "name" : "revealSecret",
-      "type" : "function",
-      "outputs" : [],
-      "stateMutability" : "nonpayable",
-      "constant" : false,
-      "inputs" : [
-         {
-            "name" : "_secret",
-            "type" : "uint256"
-         },
-         {
-            "name" : "_signature",
-            "type" : "bytes"
-         }
-      ],
-      "payable" : false
+     "constant": true,
+     "inputs": [
+       {
+         "name": "_collectRound",
+         "type": "uint256"
+       }
+     ],
+     "name": "committedValidators",
+     "outputs": [
+       {
+         "name": "",
+         "type": "address[]"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "payable" : false,
-      "inputs" : [],
-      "constant" : true,
-      "stateMutability" : "view",
-      "type" : "function",
-      "name" : "currentCollectRound",
-      "outputs" : [
-         {
-            "name" : "",
-            "type" : "uint256"
-         }
-      ]
+     "constant": true,
+     "inputs": [
+       {
+         "name": "_collectRound",
+         "type": "uint256"
+       },
+       {
+         "name": "_validator",
+         "type": "address"
+       }
+     ],
+     "name": "createdBlockOnCommitsPhase",
+     "outputs": [
+       {
+         "name": "",
+         "type": "bool"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "type" : "function",
-      "name" : "createdBlockOnRevealsPhase",
-      "outputs" : [
-         {
-            "type" : "bool",
-            "name" : ""
-         }
-      ],
-      "stateMutability" : "view",
-      "constant" : true,
-      "payable" : false,
-      "inputs" : [
-         {
-            "type" : "uint256",
-            "name" : "_collectRound"
-         },
-         {
-            "type" : "address",
-            "name" : "_validator"
-         }
-      ]
+     "constant": true,
+     "inputs": [
+       {
+         "name": "_collectRound",
+         "type": "uint256"
+       },
+       {
+         "name": "_validator",
+         "type": "address"
+       }
+     ],
+     "name": "createdBlockOnRevealsPhase",
+     "outputs": [
+       {
+         "name": "",
+         "type": "bool"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "constant" : true,
-      "inputs" : [],
-      "payable" : false,
-      "outputs" : [
-         {
-            "type" : "uint256",
-            "name" : ""
-         }
-      ],
-      "type" : "function",
-      "name" : "COLLECT_ROUND_LENGTH",
-      "stateMutability" : "view"
+     "constant": true,
+     "inputs": [],
+     "name": "currentCollectRound",
+     "outputs": [
+       {
+         "name": "",
+         "type": "uint256"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "name" : "isCommitted",
-      "type" : "function",
-      "outputs" : [
-         {
-            "name" : "",
-            "type" : "bool"
-         }
-      ],
-      "stateMutability" : "view",
-      "constant" : true,
-      "inputs" : [
-         {
-            "type" : "uint256",
-            "name" : "_collectRound"
-         },
-         {
-            "type" : "address",
-            "name" : "_validator"
-         }
-      ],
-      "payable" : false
+     "constant": true,
+     "inputs": [
+       {
+         "name": "_collectRound",
+         "type": "uint256"
+       },
+       {
+         "name": "_validator",
+         "type": "address"
+       }
+     ],
+     "name": "getCommit",
+     "outputs": [
+       {
+         "name": "",
+         "type": "bytes32"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "payable" : false,
-      "inputs" : [
-         {
-            "name" : "_currentValidator",
-            "type" : "address"
-         }
-      ],
-      "constant" : false,
-      "stateMutability" : "nonpayable",
-      "type" : "function",
-      "name" : "onBlockClose",
-      "outputs" : []
+     "constant": true,
+     "inputs": [],
+     "name": "getCurrentSecret",
+     "outputs": [
+       {
+         "name": "",
+         "type": "uint256"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "stateMutability" : "view",
-      "type" : "function",
-      "outputs" : [
-         {
-            "type" : "bool",
-            "name" : ""
-         }
-      ],
-      "name" : "isRevealPhase",
-      "payable" : false,
-      "inputs" : [],
-      "constant" : true
+     "constant": true,
+     "inputs": [
+       {
+         "name": "_collectRound",
+         "type": "uint256"
+       },
+       {
+         "name": "_validator",
+         "type": "address"
+       }
+     ],
+     "name": "isCommitted",
+     "outputs": [
+       {
+         "name": "",
+         "type": "bool"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "payable" : false,
-      "inputs" : [],
-      "constant" : true,
-      "stateMutability" : "view",
-      "type" : "function",
-      "name" : "getCurrentSecret",
-      "outputs" : [
-         {
-            "type" : "uint256",
-            "name" : ""
-         }
-      ]
+     "constant": true,
+     "inputs": [],
+     "name": "isCommitPhase",
+     "outputs": [
+       {
+         "name": "",
+         "type": "bool"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "payable" : false,
-      "inputs" : [
-         {
-            "name" : "_collectRound",
-            "type" : "uint256"
-         },
-         {
-            "name" : "_validator",
-            "type" : "address"
-         }
-      ],
-      "constant" : true,
-      "stateMutability" : "view",
-      "outputs" : [
-         {
-            "type" : "bool",
-            "name" : ""
-         }
-      ],
-      "type" : "function",
-      "name" : "createdBlockOnCommitsPhase"
+     "constant": true,
+     "inputs": [],
+     "name": "isRevealPhase",
+     "outputs": [
+       {
+         "name": "",
+         "type": "bool"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "stateMutability" : "view",
-      "name" : "revealsCount",
-      "type" : "function",
-      "outputs" : [
-         {
-            "type" : "uint256",
-            "name" : ""
-         }
-      ],
-      "payable" : false,
-      "inputs" : [
-         {
-            "type" : "uint256",
-            "name" : "_collectRound"
-         }
-      ],
-      "constant" : true
+     "constant": true,
+     "inputs": [
+       {
+         "name": "_collectRound",
+         "type": "uint256"
+       }
+     ],
+     "name": "revealsCount",
+     "outputs": [
+       {
+         "name": "",
+         "type": "uint256"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    },
    {
-      "inputs" : [
-         {
-            "name" : "_collectRound",
-            "type" : "uint256"
-         },
-         {
-            "name" : "_validator",
-            "type" : "address"
-         }
-      ],
-      "payable" : false,
-      "constant" : true,
-      "stateMutability" : "view",
-      "type" : "function",
-      "outputs" : [
-         {
-            "type" : "bytes32",
-            "name" : ""
-         }
-      ],
-      "name" : "getCommit"
+     "constant": true,
+     "inputs": [
+       {
+         "name": "_collectRound",
+         "type": "uint256"
+       },
+       {
+         "name": "_validator",
+         "type": "address"
+       }
+     ],
+     "name": "sentReveal",
+     "outputs": [
+       {
+         "name": "",
+         "type": "bool"
+       }
+     ],
+     "payable": false,
+     "stateMutability": "view",
+     "type": "function"
    }
 ]

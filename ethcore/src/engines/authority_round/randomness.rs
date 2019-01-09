@@ -7,9 +7,7 @@
 //!
 //! No additional state is kept inside the `RandomnessPhase`, it must be passed in each time.
 
-use account_provider::SignError;
-use engines::signer::EngineSigner;
-use ethabi::{Bytes, Hash};
+use ethabi::Hash;
 use ethereum_types::{Address, U256};
 use hash::keccak;
 use rand::Rng;
@@ -27,6 +25,7 @@ use_contract!(aura_random, "res/authority_round_random.json");
 ///
 /// The process of generating random numbers is a simple finite state machine:
 ///
+/// ```ignore
 ///                                                       +
 ///                                                       |
 ///                                                       |
@@ -46,6 +45,7 @@ use_contract!(aura_random, "res/authority_round_random.json");
 /// |  Committed   +------------------------------>    Reveal     |
 /// |              |  enter reveal phase          |               |
 /// +--------------+                              +---------------+
+/// ```
 ///
 ///
 /// Phase transitions are performed by the smart contract and simply queried by the engine.
@@ -93,8 +93,6 @@ pub enum PhaseError {
 	TransactionFailed(CallError),
 	/// When trying to reveal the secret, no secret was found.
 	LostSecret,
-	/// Failed to sign our commitment or secret.
-	Sign(SignError),
 	/// A secret was stored, but it did not match the committed hash.
 	StaleSecret,
 }
@@ -177,7 +175,6 @@ impl RandomnessPhase {
 		self,
 		contract: &BoundContract,
 		stored_secret: Option<Secret>,
-		signer: &EngineSigner,
 		rng: &mut R,
 	) -> Result<Option<Secret>, PhaseError> {
 		match self {
@@ -191,18 +188,9 @@ impl RandomnessPhase {
 				let secret: Secret = buf.into();
 				let secret_hash: Hash = keccak(secret.as_ref());
 
-				// Currently the PoS contracts are setup in a way that only the system address can
-				// commit hashes, so we need to sign "manually".
-				let signature: Bytes =
-					signer.sign(secret_hash).map_err(PhaseError::Sign)?.as_ref().into();
-
 				// Schedule the transaction that commits the hash.
-				contract
-					.schedule_service_transaction(aura_random::functions::commit_hash::call(
-						secret_hash,
-						signature,
-					))
-					.map_err(PhaseError::TransactionFailed)?;
+				let data = aura_random::functions::commit_hash::call(secret_hash);
+				contract.schedule_service_transaction(data).map_err(PhaseError::TransactionFailed)?;
 
 				// Store the newly generated secret.
 				Ok(Some(secret))
@@ -221,13 +209,8 @@ impl RandomnessPhase {
 				}
 
 				// We are now sure that we have the correct secret and can reveal it.
-				let signature: Bytes =
-					signer.sign(secret.into()).map_err(PhaseError::Sign)?.as_ref().into();
-				contract
-					.schedule_service_transaction(aura_random::functions::reveal_secret::call(
-						secret, signature,
-					))
-					.map_err(PhaseError::TransactionFailed)?;
+				let data = aura_random::functions::reveal_secret::call(secret);
+				contract.schedule_service_transaction(data).map_err(PhaseError::TransactionFailed)?;
 
 				// We still pass back the secret -- if anything fails later down the line, we can
 				// resume by simply creating another transaction.

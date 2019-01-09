@@ -1169,7 +1169,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			let secret = *self.rand_secret.read();
 			let mut rng = ::rand::OsRng::new()?;
 			// TODO: Add new transaction to the block?
-			*self.rand_secret.write() = phase.advance(&contract, secret, &*self.signer.read(), &mut rng)
+			*self.rand_secret.write() = phase.advance(&contract, secret, &mut rng)
 				.map_err(|err| EngineError::FailedSystemCall(format!("Randomness error: {:?}", err)))?;
 		}
 
