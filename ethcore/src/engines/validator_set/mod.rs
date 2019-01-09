@@ -43,7 +43,6 @@ use self::safe_contract::ValidatorSafeContract;
 use self::multi::Multi;
 use super::SystemCall;
 use ethkey::Signature;
-use error::Error;
 
 /// Creates a validator set from spec.
 pub fn new_validator_set(spec: ValidatorSpec) -> Box<ValidatorSet> {
@@ -90,7 +89,7 @@ pub trait ValidatorSet: Send + Sync + 'static {
 	/// The caller provided here may not generate proofs.
 	///
 	/// `first` is true if this is the first block in the set.
-	fn on_epoch_begin(&self, _first: bool, _header: &Header, _call: &mut SystemCall) -> Result<(), Error> {
+	fn on_epoch_begin(&self, _first: bool, _header: &Header, _call: &mut SystemCall) -> Result<(), ::error::Error> {
 		Ok(())
 	}
 
@@ -126,7 +125,7 @@ pub trait ValidatorSet: Send + Sync + 'static {
 	/// Returns the set, along with a flag indicating whether finality of a specific
 	/// hash should be proven.
 	fn epoch_set(&self, first: bool, machine: &EthereumMachine, number: BlockNumber, proof: &[u8])
-		-> Result<(SimpleList, Option<H256>), Error>;
+		-> Result<(SimpleList, Option<H256>), ::error::Error>;
 
 	/// Checks if a given address is a validator, with the given function
 	/// for executing synchronous calls to contracts.
@@ -139,15 +138,7 @@ pub trait ValidatorSet: Send + Sync + 'static {
 	fn count_with_caller(&self, parent_block_hash: &H256, caller: &Call) -> usize;
 
 	/// Notifies about malicious behaviour.
-	fn report_malicious(
-		&self,
-		_validator: &Address,
-		_set_block: BlockNumber,
-		_block: BlockNumber,
-		_signer: &dyn Fn(H256) -> Result<Signature, Error>
-	) -> Result<(), Error> {
-		Ok(())
-	}
+	fn report_malicious(&self, _validator: &Address, _set_block: BlockNumber, _block: BlockNumber, _signer: &mut dyn FnMut(H256) -> Signature) {}
 	/// Notifies about benign misbehaviour.
 	fn report_benign(&self, _validator: &Address, _set_block: BlockNumber, _block: BlockNumber) {}
 	/// Allows blockchain state access.

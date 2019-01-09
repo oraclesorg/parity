@@ -32,8 +32,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use keccak_hasher::KeccakHasher;
 
 use hashdb::Hasher;
-use ethkey::Signature;
-use error::Error;
+use ethkey::{sign, Signature};
 
 use super::{ValidatorSet, SimpleList, SystemCall};
 use super::safe_contract::ValidatorSafeContract;
@@ -79,7 +78,7 @@ impl ValidatorSet for ValidatorContract {
 		self.validators.default_caller(id)
 	}
 
-	fn on_epoch_begin(&self, first: bool, header: &Header, call: &mut SystemCall) -> Result<(), Error> {
+	fn on_epoch_begin(&self, first: bool, header: &Header, call: &mut SystemCall) -> Result<(), ::error::Error> {
 		self.validators.on_epoch_begin(first, header, call)
 	}
 
@@ -100,7 +99,7 @@ impl ValidatorSet for ValidatorContract {
 		self.validators.signals_epoch_end(first, header, aux)
 	}
 
-	fn epoch_set(&self, first: bool, machine: &EthereumMachine, number: BlockNumber, proof: &[u8]) -> Result<(SimpleList, Option<H256>), Error> {
+	fn epoch_set(&self, first: bool, machine: &EthereumMachine, number: BlockNumber, proof: &[u8]) -> Result<(SimpleList, Option<H256>), ::error::Error> {
 		self.validators.epoch_set(first, machine, number, proof)
 	}
 
@@ -116,13 +115,7 @@ impl ValidatorSet for ValidatorContract {
 		self.validators.count_with_caller(bh, caller)
 	}
 
-	fn report_malicious(
-		&self,
-		address: &Address,
-		_set_block: BlockNumber,
-		block: BlockNumber,
-		signer: &dyn Fn(H256) -> Result<Signature, Error>
-	) -> Result<(), Error> {
+	fn report_malicious(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber, signer: &mut dyn FnMut(H256) -> Signature) {
 		let message = {
 			let mut buf = vec![0; 52];
 			address.copy_to(&mut buf[..20]);
@@ -131,17 +124,17 @@ impl ValidatorSet for ValidatorContract {
 		};
 
 		let signature = {
-			let signature = signer(KeccakHasher::hash(&message))?;
+			let signature = signer(KeccakHasher::hash(&message));
 			let mut v = Vec::with_capacity(signature.len());
 			v.extend_from_slice(signature.deref());
 			v
 		};
 
 		let data = validator_report::functions::report_malicious_validator::encode_input(message, signature);
-		Ok(match self.transact(data) {
+		match self.transact(data) {
 			Ok(_) => warn!(target: "engine", "Reported malicious validator {}", address),
 			Err(s) => warn!(target: "engine", "Validator {} could not be reported {}", address, s),
-		})
+		}
 	}
 
 	fn report_benign(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber) {
