@@ -42,7 +42,6 @@ use self::contract::ValidatorContract;
 use self::safe_contract::ValidatorSafeContract;
 use self::multi::Multi;
 use super::SystemCall;
-use ethkey::Signature;
 
 /// Creates a validator set from spec.
 pub fn new_validator_set(spec: ValidatorSpec) -> Box<ValidatorSet> {
@@ -138,7 +137,7 @@ pub trait ValidatorSet: Send + Sync + 'static {
 	fn count_with_caller(&self, parent_block_hash: &H256, caller: &Call) -> usize;
 
 	/// Notifies about malicious behaviour.
-	fn report_malicious(&self, _validator: &Address, _set_block: BlockNumber, _block: BlockNumber, _signer: &mut dyn FnMut(H256) -> Signature) {}
+	fn report_malicious(&self, _validator: &Address, _set_block: BlockNumber, _block: BlockNumber, _proof: Bytes) {}
 	/// Notifies about benign misbehaviour.
 	fn report_benign(&self, _validator: &Address, _set_block: BlockNumber, _block: BlockNumber) {}
 	/// Allows blockchain state access.
