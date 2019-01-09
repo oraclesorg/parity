@@ -25,7 +25,7 @@ use_contract!(aura_random, "res/authority_round_random.json");
 ///
 /// The process of generating random numbers is a simple finite state machine:
 ///
-/// ```ignore
+/// ```text
 ///                                                       +
 ///                                                       |
 ///                                                       |
