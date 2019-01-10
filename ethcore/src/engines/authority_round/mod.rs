@@ -89,7 +89,7 @@ pub struct AuthorityRoundParams {
 	/// Sets whether Aura will use Proof of Authority (PoA) or Proof of Stake (PoS) consensus.
 	pub consensus_kind: ConsensusKind,
 	/// If set, enables random number contract integration.
-	pub randomness_contract: Option<Address>,
+	pub randomness_contract_address: Option<Address>,
 }
 
 const U16_MAX: usize = ::std::u16::MAX as usize;
@@ -121,7 +121,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			maximum_empty_steps: p.maximum_empty_steps.map_or(0, Into::into),
 			strict_empty_steps_transition: p.strict_empty_steps_transition.map_or(0, Into::into),
 			consensus_kind: p.consensus_kind.unwrap_or(ConsensusKind::Poa),
-			randomness_contract: None,
+			randomness_contract_address: p.randomness_contract_address.map(Into::into),
 		}
 	}
 }
@@ -438,10 +438,10 @@ pub struct AuthorityRound {
 	consensus_kind: ConsensusKind,
 	machine: EthereumMachine,
 	/// The stored secret contribution to randomness.
-	// TODO: Only used in PoS. Maybe make part of `ConsensusKind`? Or tie together with `randomness_contract`?
+	// TODO: Only used in PoS. Maybe make part of `ConsensusKind`? Or tie together with `randomness_contract_address`?
 	rand_secret: RwLock<Option<randomness::Secret>>,
 	/// If set, enables random number contract integration.
-	randomness_contract: Option<Address>,
+	randomness_contract_address: Option<Address>,
 }
 
 // header-chain validator.
@@ -697,7 +697,7 @@ impl AuthorityRound {
 				consensus_kind: our_params.consensus_kind,
 				machine: machine,
 				rand_secret: Default::default(),
-				randomness_contract: our_params.randomness_contract,
+				randomness_contract_address: our_params.randomness_contract_address,
 			});
 
 		// Do not initialize timeouts for tests.
@@ -1153,7 +1153,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 	) -> Result<(), Error> {
 		// Random number generation
 		// TODO: Is this the right place to do this?
-		if let (Some(contract_addr), Some(our_addr)) = (self.randomness_contract, self.signer.read().address()) {
+		if let (Some(contract_addr), Some(our_addr)) = (self.randomness_contract_address, self.signer.read().address()) {
 			let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
 				Some(client) => client,
 				None => {
@@ -1607,7 +1607,7 @@ mod tests {
 			block_reward_contract: Default::default(),
 			strict_empty_steps_transition: 0,
 			consensus_kind: ConsensusKind::Poa,
-			randomness_contract: None,
+			randomness_contract_address: None,
 		};
 
 		// mutate aura params

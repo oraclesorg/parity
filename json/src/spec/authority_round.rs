@@ -67,6 +67,8 @@ pub struct AuthorityRoundParams {
 	pub strict_empty_steps_transition: Option<Uint>,
 	/// Sets whether Aura will use Proof of Authority (PoA) or Proof of Stake (PoS) consensus.
 	pub consensus_kind: Option<ConsensusKind>,
+	/// If set, enables random number contract integration.
+	pub randomness_contract_address: Option<Address>,
 }
 
 /// Authority engine deserialization.
