@@ -20,7 +20,7 @@
 use std::sync::Weak;
 
 use bytes::Bytes;
-use ethereum_types::{H256, Address, U256};
+use ethereum_types::{H256, Address};
 use parking_lot::RwLock;
 
 use client::EngineClient;
@@ -51,14 +51,14 @@ impl ValidatorContract {
 }
 
 impl ValidatorContract {
-	fn transact(&self, data: Bytes, gas_price: Option<U256>) -> Result<(), String> {
+	fn transact(&self, data: Bytes) -> Result<(), String> {
 		let client = self.client.read().as_ref()
 			.and_then(Weak::upgrade)
 			.ok_or_else(|| "No client!")?;
 
 		match client.as_full_client() {
 			Some(c) => {
-				c.transact(Action::Call(self.contract_address), data, None, gas_price)
+				c.transact(Action::Call(self.contract_address), data, None, Some(0.into()))
 					.map_err(|e| format!("Transaction import error: {}", e))?;
 				Ok(())
 			},
@@ -111,7 +111,7 @@ impl ValidatorSet for ValidatorContract {
 
 	fn report_malicious(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber, proof: Bytes) {
 		let data = validator_report::functions::report_malicious::encode_input(*address, block, proof);
-		match self.transact(data, Some(0.into())) {
+		match self.transact(data) {
 			Ok(_) => warn!(target: "engine", "Reported malicious validator {}", address),
 			Err(s) => warn!(target: "engine", "Validator {} could not be reported {}", address, s),
 		}
@@ -119,7 +119,7 @@ impl ValidatorSet for ValidatorContract {
 
 	fn report_benign(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber) {
 		let data = validator_report::functions::report_benign::encode_input(*address, block);
-		match self.transact(data, None) {
+		match self.transact(data) {
 			Ok(_) => warn!(target: "engine", "Reported benign validator misbehaviour {}", address),
 			Err(s) => warn!(target: "engine", "Validator {} could not be reported {}", address, s),
 		}
@@ -146,7 +146,6 @@ mod tests {
 	use types::ids::BlockId;
 	use test_helpers::generate_dummy_client_with_spec_and_accounts;
 	use client::{BlockChainClient, ChainInfo, BlockInfo, CallContract};
-	use transaction::Action;
 	use super::super::ValidatorSet;
 	use super::ValidatorContract;
 
@@ -209,7 +208,7 @@ mod tests {
 		assert_eq!(client.chain_info().best_block_number, 2);
 
 		// Check if misbehaving validator was removed.
-		client.transact(Action::Call(Default::default()), Default::default(), None, None).unwrap();
+		client.transact_contract(Default::default(), Default::default()).unwrap();
 		client.engine().step();
 		client.engine().step();
 		assert_eq!(client.chain_info().best_block_number, 2);
