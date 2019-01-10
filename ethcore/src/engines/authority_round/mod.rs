@@ -1152,7 +1152,9 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		_ancestry: &mut Iterator<Item=ExtendedHeader>,
 	) -> Result<(), Error> {
 		// Random number generation
-		// TODO: Is this the right place to do this?
+		// This will add local service transactions to the queue. Since `on_new_block` is called before the transactions
+		// are selected from the queue and local transactions are prioritized, they should end up in this block.
+		// TODO: Verify this!
 		if let (Some(contract_addr), Some(our_addr)) = (self.randomness_contract_address, self.signer.read().address()) {
 			let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
 				Some(client) => client,
@@ -1163,12 +1165,11 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			};
 			let block_id = BlockId::Number(block.header.number());
 			let mut contract = util::BoundContract::bind(&*client, block_id, contract_addr);
-            // TODO: How should these errors be handled?
+			// TODO: How should these errors be handled?
 			let phase = randomness::RandomnessPhase::load(&contract, our_addr)
 				.map_err(|err| EngineError::FailedSystemCall(format!("Randomness error: {:?}", err)))?;
 			let secret = *self.rand_secret.read();
 			let mut rng = ::rand::OsRng::new()?;
-			// TODO: Add new transaction to the block?
 			*self.rand_secret.write() = phase.advance(&contract, secret, &mut rng)
 				.map_err(|err| EngineError::FailedSystemCall(format!("Randomness error: {:?}", err)))?;
 		}
