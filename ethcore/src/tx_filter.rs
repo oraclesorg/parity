@@ -81,6 +81,7 @@ impl TransactionFilter {
 
 		let sender = transaction.sender();
 		let value = transaction.value;
+		let gas_price = transaction.gas_price;
 		let key = (*parent_hash, sender);
 
 		if let Some(permissions) = permission_cache.get_mut(&key) {
@@ -111,7 +112,8 @@ impl TransactionFilter {
 							})
 					},
 					0xfffffffffffffffe => {
-						let (data, decoder) = transact_acl_gas_price::functions::allowed_tx_types::call(sender, to, value, transaction.gas_price);
+						trace!(target: "tx_filter", "Using filter with gas price");
+						let (data, decoder) = transact_acl_gas_price::functions::allowed_tx_types::call(sender, to, value, gas_price);
 						client.call_contract(BlockId::Hash(*parent_hash), contract_address, data)
 							.and_then(|value| decoder.decode(&value).map_err(|e| e.to_string()))
 							.map(|(p, f)| (p.low_u32(), f))
@@ -143,8 +145,8 @@ impl TransactionFilter {
 			permission_cache.insert((*parent_hash, sender), permissions);
 		}
 		trace!(target: "tx_filter",
-			"Given transaction data: sender: {:?} to: {:?} value: {}. Permissions required: {:X}, got: {:X}",
-			   sender, to, value, tx_type, permissions
+			"Given transaction data: sender: {:?} to: {:?} value: {}, gas_price: {}. Permissions required: {:X}, got: {:X}",
+			   sender, to, value, gas_price, tx_type, permissions
 		);
 		permissions & tx_type != 0
 	}
