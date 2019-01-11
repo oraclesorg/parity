@@ -111,7 +111,7 @@ impl TransactionFilter {
 								(tx_permissions::NONE, true)
 							})
 					},
-					0xfffffffffffffffe => {
+					0xffff_ffff_ffff_fffe => {
 						trace!(target: "tx_filter", "Using filter with gas price");
 						let (data, decoder) = transact_acl_gas_price::functions::allowed_tx_types::call(sender, to, value, gas_price);
 						client.call_contract(BlockId::Hash(*parent_hash), contract_address, data)
