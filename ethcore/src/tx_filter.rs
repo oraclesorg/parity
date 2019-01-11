@@ -106,28 +106,23 @@ impl TransactionFilter {
 						client.call_contract(BlockId::Hash(*parent_hash), contract_address, data)
 							.and_then(|value| decoder.decode(&value).map_err(|e| e.to_string()))
 							.map(|(p, f)| (p.low_u32(), f))
-							.unwrap_or_else(|e| {
-								error!(target: "tx_filter", "Error calling tx permissions contract: {:?}", e);
-								(tx_permissions::NONE, true)
-							})
-					},
+					}
 					0xffff_ffff_ffff_fffe => {
 						trace!(target: "tx_filter", "Using filter with gas price");
 						let (data, decoder) = transact_acl_gas_price::functions::allowed_tx_types::call(sender, to, value, gas_price);
 						client.call_contract(BlockId::Hash(*parent_hash), contract_address, data)
 							.and_then(|value| decoder.decode(&value).map_err(|e| e.to_string()))
 							.map(|(p, f)| (p.low_u32(), f))
-							.unwrap_or_else(|e| {
-								error!(target: "tx_filter", "Error calling tx permissions contract: {:?}", e);
-								(tx_permissions::NONE, true)
-							})
-					},
+					}
 					_ => {
 						error!(target: "tx_filter", "Unknown version of tx permissions contract is used");
-						(tx_permissions::NONE, true)
+						Ok((tx_permissions::NONE, true))
 					}
-				}
-			},
+				}.unwrap_or_else(|e| {
+					error!(target: "tx_filter", "Error calling tx permissions contract: {:?}", e);
+					(tx_permissions::NONE, true)
+				})
+			}
 			None => {
 				trace!(target: "tx_filter", "Fallback to the deprecated version of tx permission contract");
 				let (data, decoder) = transact_acl_deprecated::functions::allowed_tx_types::call(sender);
