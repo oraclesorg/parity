@@ -335,8 +335,8 @@ impl ValidatorSet for ValidatorSafeContract {
 		}
 
 		let bloom = match self.consensus_kind {
-			ConsensusKind::Poa => None,
-			ConsensusKind::Pos => {
+			ConsensusKind::Pos => None,
+			ConsensusKind::Poa => {
 				let bloom = self.expected_bloom(header);
 				let header_bloom = header.log_bloom();
 				if &bloom & header_bloom != bloom { return ::engines::EpochChange::No }
@@ -397,8 +397,8 @@ impl ValidatorSet for ValidatorSafeContract {
 			}
 
 			match match self.consensus_kind {
-				ConsensusKind::Poa => self.extract_from_block(self.default_caller(BlockId::Number(number))),
-				ConsensusKind::Pos => self.extract_from_event(self.expected_bloom(&old_header), &old_header, &receipts),
+				ConsensusKind::Pos => self.extract_from_block(self.default_caller(BlockId::Number(number))),
+				ConsensusKind::Poa => self.extract_from_event(self.expected_bloom(&old_header), &old_header, &receipts),
 			} {
 				Some(list) => Ok((list, Some(old_header.hash()))),
 				None => Err(::engines::EngineError::InsufficientProof("No log event in proof.".into()).into()),
