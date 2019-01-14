@@ -28,11 +28,6 @@ use types::header::Header;
 use types::transaction::Action;
 
 use client::EngineClient;
-use byteorder::{ByteOrder, LittleEndian};
-use keccak_hasher::KeccakHasher;
-
-use hashdb::Hasher;
-use ethkey::{sign, Signature};
 use ethjson::spec::authority_round::ConsensusKind;
 
 use super::{ValidatorSet, SimpleList, SystemCall};
