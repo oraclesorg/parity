@@ -1158,7 +1158,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 					return Err(EngineError::RequiresClient.into())
 				},
 			};
-			let block_id = BlockId::Number(block.header.number());
+			let block_id = BlockId::Latest;
 			let mut contract = util::BoundContract::bind(&*client, block_id, contract_addr);
 			// TODO: How should these errors be handled?
 			let phase = randomness::RandomnessPhase::load(&contract, our_addr)
