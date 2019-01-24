@@ -437,7 +437,7 @@ impl AccountProvider {
 		Ok(())
 	}
 
-	fn password(&self, account: &StoreAccountRef) -> Result<Password, SignError> {
+	pub fn password(&self, account: &StoreAccountRef) -> Result<Password, SignError> {
 		let mut unlocked = self.unlocked.write();
 		let data = unlocked.get(account).ok_or(SignError::NotUnlocked)?.clone();
 		if let Unlock::OneTime = data.unlock {

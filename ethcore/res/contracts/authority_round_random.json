@@ -1,18 +1,6 @@
 [{
 		"constant": true,
 		"inputs": [],
-		"name": "COMMIT_PHASE_LENGTH",
-		"outputs": [{
-			"name": "",
-			"type": "uint256"
-		}],
-		"payable": false,
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"constant": true,
-		"inputs": [],
 		"name": "currentRandom",
 		"outputs": [{
 			"name": "",
@@ -35,23 +23,16 @@
 		"type": "function"
 	},
 	{
-		"constant": true,
-		"inputs": [],
-		"name": "COLLECT_ROUND_LENGTH",
-		"outputs": [{
-			"name": "",
-			"type": "uint256"
-		}],
-		"payable": false,
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
 		"constant": false,
 		"inputs": [{
-			"name": "_secretHash",
-			"type": "bytes32"
-		}],
+				"name": "_secretHash",
+				"type": "bytes32"
+			},
+			{
+				"name": "_cipher",
+				"type": "bytes"
+			}
+		],
 		"name": "commitHash",
 		"outputs": [],
 		"payable": false,
@@ -65,6 +46,18 @@
 			"type": "uint256"
 		}],
 		"name": "revealSecret",
+		"outputs": [],
+		"payable": false,
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"constant": false,
+		"inputs": [{
+			"name": "_collectRoundLength",
+			"type": "uint256"
+		}],
+		"name": "initialize",
 		"outputs": [],
 		"payable": false,
 		"stateMutability": "nonpayable",
@@ -92,6 +85,30 @@
 		"outputs": [{
 			"name": "",
 			"type": "address[]"
+		}],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"constant": true,
+		"inputs": [],
+		"name": "collectRoundLength",
+		"outputs": [{
+			"name": "",
+			"type": "uint256"
+		}],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"constant": true,
+		"inputs": [],
+		"name": "commitPhaseLength",
+		"outputs": [{
+			"name": "",
+			"type": "uint256"
 		}],
 		"payable": false,
 		"stateMutability": "view",
@@ -159,6 +176,26 @@
 		"outputs": [{
 			"name": "",
 			"type": "uint256"
+		}],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"constant": true,
+		"inputs": [{
+				"name": "_collectRound",
+				"type": "uint256"
+			},
+			{
+				"name": "_validator",
+				"type": "address"
+			}
+		],
+		"name": "getCipher",
+		"outputs": [{
+			"name": "",
+			"type": "bytes"
 		}],
 		"payable": false,
 		"stateMutability": "view",

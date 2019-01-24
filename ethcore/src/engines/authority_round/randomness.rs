@@ -13,6 +13,9 @@ use hash::keccak;
 use rand::Rng;
 
 use super::util::{BoundContract, CallError};
+use account_provider::{self, AccountProvider};
+use ethstore::ethkey::crypto::{self, ecies};
+use ethstore::StoreAccountRef;
 
 /// Secret type expected by the contract.
 // Note: Conversion from `U256` back into `[u8; 32]` is cumbersome (missing implementations), for
@@ -91,12 +94,12 @@ pub enum PhaseError {
 	LoadFailed(CallError),
 	/// Failed to schedule a transaction to call a contract.
 	TransactionFailed(CallError),
-	/// When trying to reveal the secret, no secret was found.
-	LostSecret,
-	/// When trying to reveal the secret, the stored secret had the wrong round number.
-	UnexpectedRound(U256),
 	/// A secret was stored, but it did not match the committed hash.
 	StaleSecret,
+	/// An error with ECIES encryption.
+	Crypto(crypto::Error),
+	/// Failed to decrypt stored secret.
+	Decrypt(account_provider::SignError),
 }
 
 impl RandomnessPhase {
@@ -176,44 +179,53 @@ impl RandomnessPhase {
 	pub fn advance<R: Rng>(
 		self,
 		contract: &BoundContract,
-		stored_secret: Option<(U256, Secret)>,
 		rng: &mut R,
-	) -> Result<Option<(U256, Secret)>, PhaseError> {
+		accounts: &AccountProvider,
+	) -> Result<(), PhaseError> {
 		match self {
-			RandomnessPhase::Waiting | RandomnessPhase::Committed => Ok(stored_secret),
-			RandomnessPhase::BeforeCommit { round, .. } => {
+			RandomnessPhase::Waiting | RandomnessPhase::Committed => (),
+			RandomnessPhase::BeforeCommit { round, our_address } => {
 				// We generate a new secret to submit each time, this function will only be called
 				// once per round of randomness generation.
 
-				let secret: Secret = match stored_secret {
-					Some((r, secret)) if r == round => secret,
-					_ => {
-						let mut buf = [0u8; 32];
-						rng.fill_bytes(&mut buf);
-						buf.into()
-					}
-				};
-				let secret_hash: Hash = keccak(secret.as_ref());
-
-				// Schedule the transaction that commits the hash.
-				let data = aura_random::functions::commit_hash::call(secret_hash);
-				contract.schedule_service_transaction(data).map_err(PhaseError::TransactionFailed)?;
-
-				// Store the newly generated secret.
-				Ok(Some((round, secret)))
-			}
-			RandomnessPhase::Reveal { round, our_address } => {
-				let (r, secret) = stored_secret.ok_or(PhaseError::LostSecret)?;
-				if r != round {
-					return Err(PhaseError::UnexpectedRound(r));
-				}
-
-				// We hash our secret again to check against the already committed hash:
-				let secret_hash: Hash = keccak(secret.as_ref());
 				let committed_hash: Hash = contract
 					.call_const(aura_random::functions::get_commit::call(round, our_address))
 					.map_err(PhaseError::LoadFailed)?;
+				if committed_hash.is_zero() {
+					return Ok(()); // Already committed.
+				}
+				let secret: Secret = {
+					let mut buf = [0u8; 32];
+					rng.fill_bytes(&mut buf);
+					buf.into()
+				};
+				let secret_hash: Hash = keccak(secret.as_ref());
+				let password = accounts.password(&StoreAccountRef::root(our_address)).unwrap(); // TODO
+				let public = accounts.account_public(our_address, &password).unwrap(); // TODO
+				let cipher = ecies::encrypt(&public, b"TODO", secret.as_ref()).map_err(PhaseError::Crypto)?;
 
+				// Schedule the transaction that commits the hash.
+				let data = aura_random::functions::commit_hash::call(secret_hash, cipher);
+				contract.schedule_service_transaction(data).map_err(PhaseError::TransactionFailed)?;
+			}
+			RandomnessPhase::Reveal { round, our_address } => {
+				// We hash our secret again to check against the already committed hash:
+				let committed_hash: Hash = contract
+					.call_const(aura_random::functions::get_commit::call(round, our_address))
+					.map_err(PhaseError::LoadFailed)?;
+				let cipher = contract
+					.call_const(aura_random::functions::get_cipher::call(round, our_address))
+					.map_err(PhaseError::LoadFailed)?;
+				let secret_vec = accounts.decrypt(our_address, None, b"TODO", &cipher).map_err(PhaseError::Decrypt)?;
+				if secret_vec.len() != 32 {
+					return Err(PhaseError::StaleSecret); // TODO: Wrong length!
+				}
+				let secret = {
+					let mut buf = [0u8; 32];
+					buf.copy_from_slice(&secret_vec);
+					buf
+				};
+				let secret_hash: Hash = keccak(secret.as_ref());
 				if secret_hash != committed_hash {
 					return Err(PhaseError::StaleSecret);
 				}
@@ -224,8 +236,8 @@ impl RandomnessPhase {
 
 				// We still pass back the secret -- if anything fails later down the line, we can
 				// resume by simply creating another transaction.
-				Ok(Some((round, secret)))
 			}
 		}
+		Ok(())
 	}
 }
