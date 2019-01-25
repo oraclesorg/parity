@@ -200,9 +200,9 @@ impl RandomnessPhase {
 					buf.into()
 				};
 				let secret_hash: Hash = keccak(secret.as_ref());
-				let password = accounts.password(&StoreAccountRef::root(our_address)).unwrap(); // TODO
-				let public = accounts.account_public(our_address, &password).unwrap(); // TODO
-				let cipher = ecies::encrypt(&public, b"TODO", secret.as_ref()).map_err(PhaseError::Crypto)?;
+				let password = accounts.password(&StoreAccountRef::root(our_address)).map_err(PhaseError::Crypto);
+				let public = accounts.account_public(our_address, &password).map_err(PhaseError::Crypto);
+				let cipher = ecies::encrypt(&public, secret_hash.into(), secret.as_ref()).map_err(PhaseError::Crypto)?;
 
 				// Schedule the transaction that commits the hash.
 				let data = aura_random::functions::commit_hash::call(secret_hash, cipher);
@@ -216,9 +216,11 @@ impl RandomnessPhase {
 				let cipher = contract
 					.call_const(aura_random::functions::get_cipher::call(round, our_address))
 					.map_err(PhaseError::LoadFailed)?;
-				let secret_vec = accounts.decrypt(our_address, None, b"TODO", &cipher).map_err(PhaseError::Decrypt)?;
+				let secret_vec = accounts.decrypt(our_address, None, committed_hash.into(), &cipher).map_err(PhaseError::Decrypt)?;
 				if secret_vec.len() != 32 {
 					return Err(PhaseError::StaleSecret); // TODO: Wrong length!
+					// note (Demi): this can only happen if there is a bug in
+					// the smart contract, or if the entire network goes awry.
 				}
 				let secret = {
 					let mut buf = [0u8; 32];
