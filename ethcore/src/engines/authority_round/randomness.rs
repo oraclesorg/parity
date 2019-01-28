@@ -15,7 +15,6 @@ use rand::Rng;
 use super::util::{BoundContract, CallError};
 use account_provider::{self, AccountProvider};
 use ethstore::ethkey::crypto::{self, ecies};
-use ethstore::StoreAccountRef;
 
 /// Secret type expected by the contract.
 // Note: Conversion from `U256` back into `[u8; 32]` is cumbersome (missing implementations), for
@@ -100,6 +99,8 @@ pub enum PhaseError {
 	Crypto(crypto::Error),
 	/// Failed to decrypt stored secret.
 	Decrypt(account_provider::SignError),
+	/// Failed to retrieve the account's public key.
+	AccountPublic(account_provider::SignError),
 }
 
 impl RandomnessPhase {
@@ -200,9 +201,8 @@ impl RandomnessPhase {
 					buf.into()
 				};
 				let secret_hash: Hash = keccak(secret.as_ref());
-				let password = accounts.password(&StoreAccountRef::root(our_address)).map_err(PhaseError::Crypto);
-				let public = accounts.account_public(our_address, &password).map_err(PhaseError::Crypto);
-				let cipher = ecies::encrypt(&public, secret_hash.into(), secret.as_ref()).map_err(PhaseError::Crypto)?;
+				let public = accounts.account_public(our_address, None).map_err(PhaseError::AccountPublic)?;
+				let cipher = ecies::encrypt(&public, secret_hash.as_ref(), secret.as_ref()).map_err(PhaseError::Crypto)?;
 
 				// Schedule the transaction that commits the hash.
 				let data = aura_random::functions::commit_hash::call(secret_hash, cipher);
@@ -216,7 +216,8 @@ impl RandomnessPhase {
 				let cipher = contract
 					.call_const(aura_random::functions::get_cipher::call(round, our_address))
 					.map_err(PhaseError::LoadFailed)?;
-				let secret_vec = accounts.decrypt(our_address, None, committed_hash.into(), &cipher).map_err(PhaseError::Decrypt)?;
+				let secret_vec = accounts.decrypt(our_address, None, committed_hash.as_ref(), &cipher)
+					.map_err(PhaseError::Decrypt)?;
 				if secret_vec.len() != 32 {
 					return Err(PhaseError::StaleSecret); // TODO: Wrong length!
 					// note (Demi): this can only happen if there is a bug in
