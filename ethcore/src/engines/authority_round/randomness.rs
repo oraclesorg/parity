@@ -55,9 +55,7 @@ use_contract!(aura_random, "res/contracts/authority_round_random.json");
 /// A typical case of using `RandomnessPhase` is:
 ///
 /// 1. `RandomnessPhase::load()` the phase from the blockchain data.
-/// 2. Load the stored secret.
-/// 3. Call `RandomnessPhase::advance()` with the stored secret.
-/// 4. Update the stored secret with the return value.
+/// 2. Call `RandomnessPhase::advance()`.
 #[derive(Debug)]
 pub enum RandomnessPhase {
 	// NOTE: Some states include information already gathered during `load` (e.g. `our_address`,
@@ -171,9 +169,7 @@ impl RandomnessPhase {
 	/// Advance the randomness state, if necessary.
 	///
 	/// Creates the transaction necessary to advance the randomness contract's state and schedules
-	/// them to run on the `client` inside `contract`. The `stored_secret` must be managed by the
-	/// the caller, passed in each time `advance` is called and replaced with the returned value
-	/// each time the function returns successfully.
+	/// them to run on the `client` inside `contract`.
 	///
 	/// **Warning**: The `advance()` function should be called only once per block state; otherwise
 	///              spurious transactions resulting in punishments might be executed.
@@ -186,47 +182,45 @@ impl RandomnessPhase {
 		match self {
 			RandomnessPhase::Waiting | RandomnessPhase::Committed => (),
 			RandomnessPhase::BeforeCommit { round, our_address } => {
-				// We generate a new secret to submit each time, this function will only be called
-				// once per round of randomness generation.
-
+				// Check whether a secret has already been committed in this round.
 				let committed_hash: Hash = contract
 					.call_const(aura_random::functions::get_commit::call(round, our_address))
 					.map_err(PhaseError::LoadFailed)?;
 				if committed_hash.is_zero() {
 					return Ok(()); // Already committed.
 				}
-				let secret: Secret = {
-					let mut buf = [0u8; 32];
-					rng.fill_bytes(&mut buf);
-					buf.into()
-				};
+
+				// Generate a new secret. Compute the secret's hash, and encrypt the secret to ourselves.
+				let secret: Secret = rng.gen();
 				let secret_hash: Hash = keccak(secret.as_ref());
 				let public = accounts.account_public(our_address, None).map_err(PhaseError::AccountPublic)?;
-				let cipher = ecies::encrypt(&public, secret_hash.as_ref(), secret.as_ref()).map_err(PhaseError::Crypto)?;
+				let cipher = ecies::encrypt(&public, &secret_hash, &secret).map_err(PhaseError::Crypto)?;
 
-				// Schedule the transaction that commits the hash.
-				let data = aura_random::functions::commit_hash::call(secret_hash, cipher);
-				contract.schedule_service_transaction(data).map_err(PhaseError::TransactionFailed)?;
+				// Schedule the transaction that commits the hash and the encrypted secret.
+				contract.schedule_service_transaction(aura_random::functions::commit_hash::call(secret_hash, cipher))
+					.map_err(PhaseError::TransactionFailed)?;
 			}
 			RandomnessPhase::Reveal { round, our_address } => {
-				// We hash our secret again to check against the already committed hash:
+				// Load the hash and encrypted secret that we stored in the commit phase.
 				let committed_hash: Hash = contract
 					.call_const(aura_random::functions::get_commit::call(round, our_address))
 					.map_err(PhaseError::LoadFailed)?;
 				let cipher = contract
 					.call_const(aura_random::functions::get_cipher::call(round, our_address))
 					.map_err(PhaseError::LoadFailed)?;
-				let secret_vec = accounts.decrypt(our_address, None, committed_hash.as_ref(), &cipher)
+
+				// Decrypt the secret and check against the hash.
+				let secret_vec = accounts.decrypt(our_address, None, &committed_hash, &cipher)
 					.map_err(PhaseError::Decrypt)?;
-				if secret_vec.len() != 32 {
-					return Err(PhaseError::StaleSecret); // TODO: Wrong length!
-					// note (Demi): this can only happen if there is a bug in
-					// the smart contract, or if the entire network goes awry.
-				}
-				let secret = {
+				let secret = if secret_vec.len() == 32 {
 					let mut buf = [0u8; 32];
 					buf.copy_from_slice(&secret_vec);
 					buf
+				} else {
+					// This can only happen if there is a bug in the smart contract,
+					// or if the entire network goes awry.
+					error!(target: "engine", "Decrypted randomness secret has the wrong length.");
+					return Err(PhaseError::StaleSecret);
 				};
 				let secret_hash: Hash = keccak(secret.as_ref());
 				if secret_hash != committed_hash {
@@ -234,11 +228,8 @@ impl RandomnessPhase {
 				}
 
 				// We are now sure that we have the correct secret and can reveal it.
-				let data = aura_random::functions::reveal_secret::call(secret);
-				contract.schedule_service_transaction(data).map_err(PhaseError::TransactionFailed)?;
-
-				// We still pass back the secret -- if anything fails later down the line, we can
-				// resume by simply creating another transaction.
+				contract.schedule_service_transaction(aura_random::functions::reveal_secret::call(secret))
+					.map_err(PhaseError::TransactionFailed)?;
 			}
 		}
 		Ok(())
