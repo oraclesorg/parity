@@ -49,7 +49,7 @@ use unexpected::{Mismatch, OutOfBounds};
 
 mod finality;
 mod randomness;
-mod util;
+pub mod util;
 
 /// `AuthorityRound` params.
 pub struct AuthorityRoundParams {

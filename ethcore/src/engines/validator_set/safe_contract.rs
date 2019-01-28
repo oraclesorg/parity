@@ -35,7 +35,7 @@ use super::simple_list::SimpleList;
 use unexpected::Mismatch;
 use ethabi::FunctionOutputDecoder;
 
-use_contract!(validator_set, "res/contracts/validator_set.json");
+use_contract!(validator_set, "res/contracts/ValidatorSetAuRa.json");
 
 const MEMOIZE_CAPACITY: usize = 500;
 
@@ -291,10 +291,31 @@ impl ValidatorSet for ValidatorSafeContract {
 
 	fn on_epoch_begin(&self, _first: bool, _header: &Header, caller: &mut SystemCall) -> Result<(), ::error::Error> {
 		let data = validator_set::functions::finalize_change::encode_input();
-		caller(self.contract_address, data)
-			.map(|_| ())
+		let () = caller(self.contract_address, data)
+			.map(drop)
 			.map_err(::engines::EngineError::FailedSystemCall)
-			.map_err(Into::into)
+			.map_err(::error::Error::from)?;
+		let (data, decoder) = validator_set::functions::emit_initiate_change_callable::call();
+		if !caller(self.contract_address, data)
+			.and_then(|x| decoder.decode(&x)
+			.map_err(|x| format!("chain spec bug: could not decode: {:?}", x)))
+			.map_err(::engines::EngineError::FailedSystemCall)
+			.map_err(::error::Error::from)? {
+			return Ok(());
+		}
+
+		let client = self.client
+			.read()
+			.clone()
+			.as_ref()
+			.and_then(Weak::upgrade)
+			.ok_or_else(|| ::error::Error::from("No client!"))?;
+		let bound_contract = super::super::authority_round::util::BoundContract::bind(&*client, BlockId::Latest, self.contract_address);
+		let data = validator_set::functions::emit_initiate_change::call();
+		bound_contract.schedule_service_transaction(data)
+			.map_err(|x|format!("Error scheduling a transaction: {:?}", x))
+			.map_err(::engines::EngineError::FailedSystemCall)
+			.map_err(::error::Error::from)
 	}
 
 	fn genesis_epoch_data(&self, header: &Header, call: &Call) -> Result<Vec<u8>, String> {
