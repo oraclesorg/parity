@@ -51,8 +51,6 @@ mod finality;
 mod randomness;
 pub(crate) mod util;
 
-use_contract!(validator_set, "res/contracts/ValidatorSetAuRa.json");
-
 /// `AuthorityRound` params.
 pub struct AuthorityRoundParams {
 	/// Time to wait before next block or authority switching,
