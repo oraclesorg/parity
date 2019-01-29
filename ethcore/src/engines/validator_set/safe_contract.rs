@@ -36,7 +36,7 @@ use super::super::authority_round::util::BoundContract;
 use unexpected::Mismatch;
 use ethabi::FunctionOutputDecoder;
 
-use_contract!(validator_set, "res/contracts/ValidatorSetAuRa.json");
+use_contract!(validator_set, "res/contracts/validator_set_aura.json");
 
 const MEMOIZE_CAPACITY: usize = 500;
 
