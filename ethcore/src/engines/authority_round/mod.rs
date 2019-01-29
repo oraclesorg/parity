@@ -49,7 +49,9 @@ use unexpected::{Mismatch, OutOfBounds};
 
 mod finality;
 mod randomness;
-pub mod util;
+pub(crate) mod util;
+
+use_contract!(validator_set, "res/contracts/ValidatorSetAuRa.json");
 
 /// `AuthorityRound` params.
 pub struct AuthorityRoundParams {
@@ -1148,14 +1150,14 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		// This will add local service transactions to the queue. Since `on_new_block` is called before the transactions
 		// are selected from the queue and local transactions are prioritized, they should end up in this block.
 		// TODO: Verify this!
+		let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
+			Some(client) => client,
+			None => {
+				debug!(target: "engine", "Unable to close block: missing client ref.");
+				return Err(EngineError::RequiresClient.into())
+			},
+		};
 		if let (Some(contract_addr), Some(our_addr)) = (self.randomness_contract_address, self.signer.read().address()) {
-			let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
-				Some(client) => client,
-				None => {
-					debug!(target: "engine", "Unable to close block: missing client ref.");
-					return Err(EngineError::RequiresClient.into())
-				},
-			};
 			let block_id = BlockId::Latest;
 			let mut contract = util::BoundContract::bind(&*client, block_id, contract_addr);
 			// TODO: How should these errors be handled?
@@ -1166,10 +1168,6 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			*self.rand_secret.write() = phase.advance(&contract, secret, &mut rng)
 				.map_err(|err| EngineError::FailedSystemCall(format!("Randomness error: {:?}", err)))?;
 		}
-
-		// with immediate transitions, we don't use the epoch mechanism anyway.
-		// the genesis is always considered an epoch, but we ignore it intentionally.
-		if self.immediate_transitions || !epoch_begin { return Ok(()) }
 
 		// genesis is never a new block, but might as well check.
 		let header = block.header().clone();
@@ -1185,6 +1183,12 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 			result.map_err(|e| format!("{}", e))
 		};
+
+		self.validators.on_new_block(first, &header, &mut call)?;
+
+		// with immediate transitions, we don't use the epoch mechanism anyway.
+		// the genesis is always considered an epoch, but we ignore it intentionally.
+		if self.immediate_transitions || !epoch_begin { return Ok(()) }
 
 		self.validators.on_epoch_begin(first, &header, &mut call)
 	}
