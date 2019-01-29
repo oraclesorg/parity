@@ -186,7 +186,7 @@ impl RandomnessPhase {
 				let committed_hash: Hash = contract
 					.call_const(aura_random::functions::get_commit::call(round, our_address))
 					.map_err(PhaseError::LoadFailed)?;
-				if committed_hash.is_zero() {
+				if !committed_hash.is_zero() {
 					return Ok(()); // Already committed.
 				}
 
@@ -224,6 +224,7 @@ impl RandomnessPhase {
 				};
 				let secret_hash: Hash = keccak(secret.as_ref());
 				if secret_hash != committed_hash {
+					error!(target: "engine", "Decrypted randomness secret doesn't agree with the hash.");
 					return Err(PhaseError::StaleSecret);
 				}
 
