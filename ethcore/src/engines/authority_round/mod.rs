@@ -53,6 +53,9 @@ mod finality;
 mod randomness;
 pub(crate) mod util;
 
+/// Export PhaseError from randomness to use in EngineError
+pub type RandomnessPhaseError = randomness::PhaseError;
+
 /// `AuthorityRound` params.
 pub struct AuthorityRoundParams {
 	/// Time to wait before next block or authority switching,
@@ -1160,10 +1163,10 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			let accounts = self.signer.read().account_provider().clone();
 			// TODO: How should these errors be handled?
 			let phase = randomness::RandomnessPhase::load(&contract, our_addr)
-				.map_err(|err| EngineError::FailedSystemCall(format!("Randomness error: {:?}", err)))?;
+				.map_err(EngineError::RandomnessLoadError)?;
 			let mut rng = ::rand::OsRng::new()?;
 			phase.advance(&contract, &mut rng, &*accounts)
-				.map_err(|err| EngineError::FailedSystemCall(format!("Randomness error: {:?}", err)))?;
+				.map_err(EngineError::RandomnessAdvanceError)?;
 		}
 
 		// genesis is never a new block, but might as well check.
