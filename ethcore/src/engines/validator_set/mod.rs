@@ -39,6 +39,7 @@ use self::contract::ValidatorContract;
 use self::safe_contract::ValidatorSafeContract;
 use self::multi::Multi;
 use super::SystemCall;
+use engines::authority_round::util::BoundContract;
 
 /// Creates a validator set from spec.
 pub fn new_validator_set(spec: ValidatorSpec) -> Box<ValidatorSet> {
@@ -66,7 +67,7 @@ pub trait ValidatorSet: Send + Sync + 'static {
 		self.contains_with_caller(parent, address, &*default)
 	}
 
-	/// Draws an validator nonce modulo number of validators.
+	/// Draws a validator nonce modulo number of validators.
 	fn get(&self, parent: &H256, nonce: usize) -> Address {
 		let default = self.default_caller(BlockId::Hash(*parent));
 		self.get_with_caller(parent, nonce, &*default)
@@ -93,7 +94,9 @@ pub trait ValidatorSet: Send + Sync + 'static {
 	/// Called for each new block.  If this block is the first block of an
 	/// epoch, this is called *before* on_epoch_begin(), but with the same
 	/// parameters.
-	fn on_new_block(&self, _first: bool, _header: &Header, _call: &mut SystemCall) -> Result<(), ::error::Error> {
+	fn on_new_block(&self, _contract: &mut BoundContract, _first: bool, _header: &Header)
+		-> Result<(), ::error::Error>
+	{
 		error!("on_new_block");
 		Ok(())
 	}
@@ -144,8 +147,13 @@ pub trait ValidatorSet: Send + Sync + 'static {
 
 	/// Notifies about malicious behaviour.
 	fn report_malicious(&self, _validator: &Address, _set_block: BlockNumber, _block: BlockNumber, _proof: Bytes) {}
+
 	/// Notifies about benign misbehaviour.
 	fn report_benign(&self, _validator: &Address, _set_block: BlockNumber, _block: BlockNumber) {}
+
 	/// Allows blockchain state access.
 	fn register_client(&self, _client: Weak<EngineClient>) {}
+
+	/// Returns the address of the validator set contract at the given block number, if any.
+	fn contract_address(&self, _set_block: BlockNumber) -> Option<Address> { None }
 }

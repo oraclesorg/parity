@@ -41,7 +41,7 @@ pub use self::traits::{
 };
 pub use state::StateInfo;
 pub use self::traits::{BlockChainClient, EngineClient, ProvingBlockChainClient, IoClient};
-
+pub use client::Binder;
 pub use types::ids::*;
 pub use types::trace_filter::Filter as TraceFilter;
 pub use types::pruning_info::PruningInfo;

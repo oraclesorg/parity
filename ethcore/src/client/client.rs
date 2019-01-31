@@ -2260,6 +2260,16 @@ impl ReopenBlock for Client {
 	}
 }
 
+pub struct Binder<'a> {
+	block: &'a mut ::block::ExecutedBlock,
+}
+
+impl<'a, 'b: 'a> Binder<'b> {
+	pub fn block(&'b mut self) -> &'a mut ::block::ExecutedBlock {
+		&mut *self.block
+	}
+}
+
 impl PrepareOpenBlock for Client {
 	fn prepare_open_block(&self, author: Address, gas_range_target: (U256, U256), extra_data: Bytes) -> Result<OpenBlock, EthcoreError> {
 		let engine = &*self.engine;
@@ -2281,6 +2291,8 @@ impl PrepareOpenBlock for Client {
 			is_epoch_begin,
 			&mut chain.ancestry_with_metadata_iter(best_header.hash()),
 		)?;
+
+		self.engine.on_block_authored(open_block.block_mut(), is_epoch_begin)?;
 
 		// Add uncles
 		chain

@@ -175,7 +175,7 @@ impl RandomnessPhase {
 	///              spurious transactions resulting in punishments might be executed.
 	pub fn advance<R: Rng>(
 		self,
-		contract: &BoundContract,
+		contract: &mut BoundContract,
 		rng: &mut R,
 		accounts: &AccountProvider,
 	) -> Result<(), PhaseError> {
@@ -197,7 +197,7 @@ impl RandomnessPhase {
 				let cipher = ecies::encrypt(&public, &secret_hash, &secret).map_err(PhaseError::Crypto)?;
 
 				// Schedule the transaction that commits the hash and the encrypted secret.
-				contract.schedule_service_transaction(aura_random::functions::commit_hash::call(secret_hash, cipher))
+				contract.push_service_transaction(aura_random::functions::commit_hash::call(secret_hash, cipher))
 					.map_err(PhaseError::TransactionFailed)?;
 			}
 			RandomnessPhase::Reveal { round, our_address } => {
@@ -229,7 +229,7 @@ impl RandomnessPhase {
 				}
 
 				// We are now sure that we have the correct secret and can reveal it.
-				contract.schedule_service_transaction(aura_random::functions::reveal_secret::call(secret))
+				contract.push_service_transaction(aura_random::functions::reveal_secret::call(secret))
 					.map_err(PhaseError::TransactionFailed)?;
 			}
 		}

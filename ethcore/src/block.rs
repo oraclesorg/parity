@@ -42,6 +42,7 @@ use ethereum_types::{H256, U256, Address, Bloom};
 use factory::Factories;
 use hash::keccak;
 use header::{Header, ExtendedHeader};
+use machine::EthereumMachine;
 use receipt::{Receipt, TransactionOutcome};
 use rlp::{Rlp, RlpStream, Encodable, Decodable, DecoderError, encode_list};
 use state_db::StateDB;
@@ -153,6 +154,28 @@ impl ExecutedBlock {
 	/// Get mutable reference to traces.
 	pub fn traces_mut(&mut self) -> &mut Tracing {
 		&mut self.traces
+	}
+
+	/// Push a transaction into the block.
+	///
+	/// If valid, it will be executed, and archived together with the receipt.
+	pub fn push_transaction(&mut self, machine: &EthereumMachine, t: SignedTransaction, h: Option<H256>)
+		-> Result<&Receipt, Error>
+	{
+		if self.transactions_set.contains(&t.hash()) {
+			return Err(TransactionError::AlreadyImported.into());
+		}
+
+		let env_info = self.env_info();
+		let outcome = self.state.apply(&env_info, machine, &t, self.traces.is_enabled())?;
+
+		self.transactions_set.insert(h.unwrap_or_else(||t.hash()));
+		self.transactions.push(t.into());
+		if let Tracing::Enabled(ref mut traces) = self.traces {
+			traces.push(outcome.trace.into());
+		}
+		self.receipts.push(outcome.receipt);
+		Ok(self.receipts.last().expect("receipt just pushed; qed"))
 	}
 }
 
@@ -328,20 +351,7 @@ impl<'x> OpenBlock<'x> {
 	///
 	/// If valid, it will be executed, and archived together with the receipt.
 	pub fn push_transaction(&mut self, t: SignedTransaction, h: Option<H256>) -> Result<&Receipt, Error> {
-		if self.block.transactions_set.contains(&t.hash()) {
-			return Err(TransactionError::AlreadyImported.into());
-		}
-
-		let env_info = self.env_info();
-		let outcome = self.block.state.apply(&env_info, self.engine.machine(), &t, self.block.traces.is_enabled())?;
-
-		self.block.transactions_set.insert(h.unwrap_or_else(||t.hash()));
-		self.block.transactions.push(t.into());
-		if let Tracing::Enabled(ref mut traces) = self.block.traces {
-			traces.push(outcome.trace.into());
-		}
-		self.block.receipts.push(outcome.receipt);
-		Ok(self.block.receipts.last().expect("receipt just pushed; qed"))
+		self.block.push_transaction(self.engine.machine(), t, h)
 	}
 
 	/// Push transactions onto the block.
@@ -424,8 +434,7 @@ impl<'x> OpenBlock<'x> {
 		})
 	}
 
-	#[cfg(test)]
-	/// Return mutable block reference. To be used in tests only.
+	/// Return mutable block reference.
 	pub fn block_mut(&mut self) -> &mut ExecutedBlock { &mut self.block }
 }
 

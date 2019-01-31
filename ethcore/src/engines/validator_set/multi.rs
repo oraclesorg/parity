@@ -18,6 +18,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Weak;
+use engines::authority_round::util::BoundContract;
 use ethereum_types::{H256, Address};
 use parking_lot::RwLock;
 use bytes::Bytes;
@@ -80,9 +81,9 @@ impl ValidatorSet for Multi {
 			.unwrap_or(Box::new(|_, _| Err("No validator set for given ID.".into())))
 	}
 
-	fn on_new_block(&self, _first: bool, header: &Header, call: &mut SystemCall) -> Result<(), ::error::Error> {
+	fn on_new_block(&self, contract: &mut BoundContract, _first: bool, header: &Header) -> Result<(), ::error::Error> {
 		error!("on_new_block");
-		self.map_children(header, &mut |set: &dyn ValidatorSet, first| set.on_new_block(first, header, call))
+		self.map_children(header, &mut |set: &dyn ValidatorSet, first| set.on_new_block(contract, first, header))
 	}
 
 

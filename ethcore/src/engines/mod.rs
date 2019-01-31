@@ -35,6 +35,7 @@ pub use self::epoch::{EpochVerifier, Transition as EpochTransition};
 pub use self::instant_seal::{InstantSeal, InstantSealParams};
 pub use self::null_engine::NullEngine;
 pub use self::tendermint::Tendermint;
+use self::authority_round::util::BoundContract;
 
 use std::sync::{Weak, Arc};
 use std::collections::{BTreeMap, HashMap};
@@ -268,6 +269,15 @@ pub trait Engine<M: Machine>: Sync + Send {
 
 	/// Optional maximum gas limit.
 	fn maximum_gas_limit(&self) -> Option<U256> { None }
+
+	/// Called for every block we author, and *only* for those blocks.
+	fn on_block_authored(
+		&self,
+		block: &mut ::block::ExecutedBlock,
+		epoch_begin: bool,		
+	) -> Result<(), Error> {
+		Ok(())
+	}
 
 	/// Block transformation functions, before the transactions.
 	/// `epoch_begin` set to true if this block kicks off an epoch.

@@ -25,6 +25,7 @@ use parking_lot::RwLock;
 use transaction::Action;
 
 use client::EngineClient;
+use engines::authority_round::util::BoundContract;
 use header::{Header, BlockNumber};
 use machine::{AuxiliaryData, Call, EthereumMachine};
 
@@ -72,9 +73,9 @@ impl ValidatorSet for ValidatorContract {
 		self.validators.default_caller(id)
 	}
 
-	fn on_new_block(&self, first: bool, header: &Header, call: &mut SystemCall) -> Result<(), ::error::Error> {
+	fn on_new_block(&self, contract: &mut BoundContract, first: bool, header: &Header) -> Result<(), ::error::Error> {
 		error!("on_new_block");
-		self.validators.on_new_block(first, header, call)
+		self.validators.on_new_block(contract, first, header)
 	}
 
 
@@ -134,6 +135,10 @@ impl ValidatorSet for ValidatorContract {
 	fn register_client(&self, client: Weak<EngineClient>) {
 		self.validators.register_client(client.clone());
 		*self.client.write() = Some(client);
+	}
+
+	fn contract_address(&self, set_block: BlockNumber) -> Option<Address> {
+		self.validators.contract_address(set_block)
 	}
 }
 
