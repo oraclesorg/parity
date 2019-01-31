@@ -314,6 +314,12 @@ pub trait Engine<M: Machine>: Sync + Send {
 	/// Allow mutating the header during seal generation. Currently only used by Clique.
 	fn on_seal_block(&self, _block: &mut ExecutedBlock) -> Result<(), Error> { Ok(()) }
 
+	/// Returns a list of transactions for a new block if we are the author.
+	///
+	/// This is called when the miner prepares a new block that this node will author and seal. It returns a list of
+	/// transactions that will be added to the block before any other transactions from the queue.
+	fn on_prepare_block(&self, _block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, M::Error> { Ok(Vec::new()) }
+
 	/// None means that it requires external input (e.g. PoW) to seal a block.
 	/// Some(true) means the engine is currently prime for seal generation (i.e. node is the current validator).
 	/// Some(false) means that the node might seal internally but is not qualified now.
