@@ -60,7 +60,7 @@ use types::receipt::{Receipt, TransactionOutcome};
 /// It's a bit like a Vec<Transaction>, except that whenever a transaction is pushed, we execute it and
 /// maintain the system `state()`. We also archive execution receipts in preparation for later block creation.
 pub struct OpenBlock<'x> {
-	block: ExecutedBlock,
+	pub(crate) block: ExecutedBlock,
 	engine: &'x EthEngine,
 }
 

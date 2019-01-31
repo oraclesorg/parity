@@ -32,7 +32,7 @@ pub trait EngineSigner: Send + Sync {
 	fn decrypt(&self, auth_data: &[u8], cipher: &[u8]) -> Result<Vec<u8>, ethkey::crypto::Error>;
 
 	/// The signer's public key.
-	fn public(&self) -> &ethkey::Public;
+	fn public(&self) -> ethkey::Public;
 }
 
 /// Creates a new `EngineSigner` from given key pair.
@@ -55,8 +55,8 @@ impl EngineSigner for Signer {
 		self.0.address()
 	}
 
-	fn public(&self) -> &ethkey::Public {
-		self.0.public()
+	fn public(&self) -> ethkey::Public {
+		*self.0.public()
 	}
 }
 
@@ -92,15 +92,15 @@ mod test_signer {
 		}
 
 		fn decrypt(&self, auth_data: &[u8], cipher: &[u8]) -> Result<Vec<u8>, ethkey::crypto::Error> {
-			self.0.decrypt(self.1, None, auth_data, cipher)
+			Ok(self.0.decrypt(self.1, None, auth_data, cipher).expect("failed to decrypt"))
 		}
 
 		fn address(&self) -> Address {
 			self.1
 		}
 
-		fn public(&self) -> &ethkey::Public {
-			self.0.account_public(self.1, self.2)
+		fn public(&self) -> ethkey::Public {
+			self.0.account_public(self.1, &self.2).expect("public key not found")
 		}
 	}
 }
