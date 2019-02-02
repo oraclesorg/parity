@@ -436,22 +436,19 @@ impl Miner {
 		};
 
 		// Before adding transactions from the queue to the new block, give the engine a chance to add transactions.
-		let engine_pending = match self.engine.on_prepare_block(open_block.block()) {
-			Ok(transactions) => transactions,
-			Err(err) => {
-				error!(target: "miner", "Failed to prepare engine transactions for new block: {:?}. \
-					   This is likely an error in chain specification or on-chain consensus smart contracts.", err);
-				return None;
-			}
+		if let Err(err) = self.engine.on_prepare_block(open_block.block()) {
+			error!(target: "miner", "Failed to prepare engine transactions for new block: {:?}. \
+				   This is likely an error in chain specification or on-chain consensus smart contracts.", err);
+			return None;
 		};
 
-		let queue_pending: Vec<Arc<_>> = self.transaction_queue.pending(
+		let pending: Vec<Arc<_>> = self.transaction_queue.pending(
 			client.clone(),
 			pool::PendingSettings {
 				block_number: chain_info.best_block_number,
 				current_timestamp: chain_info.best_block_timestamp,
 				nonce_cap,
-				max_len: max_transactions.saturating_sub(engine_pending.len()),
+				max_len: max_transactions,
 				ordering: miner::PendingOrdering::Priority,
 			}
 		);
@@ -461,11 +458,12 @@ impl Miner {
 		};
 
 		let block_start = Instant::now();
-		debug!(target: "miner", "Attempting to push {} transactions.", engine_pending.len() + queue_pending.len());
+		debug!(target: "miner", "Attempting to push {} transactions.", pending.len());
 
-		for transaction in engine_pending.into_iter().chain(queue_pending.into_iter().map(|tx| tx.signed().clone())) {
+		for tx in pending {
 			let start = Instant::now();
 
+			let transaction = tx.signed().clone();
 			let hash = transaction.hash();
 			let sender = transaction.sender();
 

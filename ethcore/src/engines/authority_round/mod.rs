@@ -44,7 +44,6 @@ use itertools::{self, Itertools};
 use rlp::{encode, Decodable, DecoderError, Encodable, RlpStream, Rlp};
 use ethereum_types::{H256, H520, Address, U128, U256};
 use parking_lot::{Mutex, RwLock};
-use transaction::SignedTransaction;
 use types::ancestry_action::AncestryAction;
 use unexpected::{Mismatch, OutOfBounds};
 
@@ -1218,7 +1217,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 	}
 
 	/// Make calls to the randomness and validator set contracts.
-	fn on_prepare_block(&self, block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> {
+	fn on_prepare_block(&self, block: &ExecutedBlock) -> Result<(), Error> {
 		// Genesis is never a new block, but might as well check.
 		let header = block.header().clone();
 		let first = header.number() == 0;
@@ -1249,8 +1248,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 		self.validators.on_new_block(first, &header, &mut call)?;
 
-		// TODO: Return new transactions instead of putting them on the queue.
-		Ok(Vec::new())
+		Ok(())
 	}
 
 	/// Check the number of seal fields.
