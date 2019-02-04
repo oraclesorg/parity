@@ -182,6 +182,14 @@ impl RandomnessPhase {
 		match self {
 			RandomnessPhase::Waiting | RandomnessPhase::Committed => (),
 			RandomnessPhase::BeforeCommit { round, our_address } => {
+				// Check we already created a block in this phase.
+				let created_block = contract
+					.call_const(aura_random::functions::created_block_on_commits_phase::call(round, our_address))
+					.map_err(PhaseError::LoadFailed)?;
+				if !created_block {
+					return Ok(()); // We are not allowed to commit before creating a block.
+				}
+
 				// Check whether a secret has already been committed in this round.
 				let committed_hash: Hash = contract
 					.call_const(aura_random::functions::get_commit::call(round, our_address))
@@ -201,6 +209,14 @@ impl RandomnessPhase {
 					.map_err(PhaseError::TransactionFailed)?;
 			}
 			RandomnessPhase::Reveal { round, our_address } => {
+				// Check we already created a block in this phase.
+				let created_block = contract
+					.call_const(aura_random::functions::created_block_on_reveals_phase::call(round, our_address))
+					.map_err(PhaseError::LoadFailed)?;
+				if !created_block {
+					return Ok(()); // We are not allowed to reveal before creating a block.
+				}
+
 				// Load the hash and encrypted secret that we stored in the commit phase.
 				let committed_hash: Hash = contract
 					.call_const(aura_random::functions::get_commit::call(round, our_address))
