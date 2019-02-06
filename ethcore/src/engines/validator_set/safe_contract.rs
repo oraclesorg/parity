@@ -289,7 +289,7 @@ impl ValidatorSet for ValidatorSafeContract {
 			.map(|out| (out, Vec::new()))) // generate no proofs in general
 	}
 
-	fn on_prepare_block(&self, _first: bool, _header: &Header, caller: &mut SystemCall)
+	fn on_prepare_block(&self, _first: bool, header: &Header, caller: &mut SystemCall)
 		-> Result<Vec<(Address, Bytes)>, ::error::Error>
 	{
 		let (data, decoder) = validator_set::functions::emit_initiate_change_callable::call();
@@ -297,11 +297,11 @@ impl ValidatorSet for ValidatorSafeContract {
 			.and_then(|x| decoder.decode(&x)
 			.map_err(|x| format!("chain spec bug: could not decode: {:?}", x)))
 			.map_err(::engines::EngineError::FailedSystemCall)? {
-			trace!(target: "engine", "New block issued ― no need to call emitInitiateChange()");
+			trace!(target: "engine", "New block #{} issued ― no need to call emitInitiateChange()", header.number());
 			return Ok(Vec::new());
 		}
 
-		trace!(target: "engine", "New block issued ― calling emitInitiateChange()");
+		trace!(target: "engine", "New block issued #{} ― calling emitInitiateChange()", header.number());
 		let (data, _decoder) = validator_set::functions::emit_initiate_change::call();
 		Ok(vec![(self.contract_address, data)])
 	}
