@@ -119,9 +119,12 @@ impl ValidatorSet for ValidatorContract {
 
 	fn report_malicious(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber, proof: Bytes) {
 		let data = validator_report::functions::report_malicious::encode_input(*address, block, proof);
-		match self.transact(data) {
+		match self.transact(data.clone()) {
 			Ok(_) => warn!(target: "engine", "Reported malicious validator {}", address),
-			Err(s) => warn!(target: "engine", "Validator {} could not be reported {}", address, s),
+			Err(s) => {
+				warn!(target: "engine", "Validator {} could not be reported {}", address, s);
+				self.validators.queue_report((*address, data))
+			}
 		}
 	}
 

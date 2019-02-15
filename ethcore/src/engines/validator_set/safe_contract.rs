@@ -24,7 +24,7 @@ use ethereum_types::{H256, U256, Address, Bloom};
 use hash::keccak;
 use kvdb::DBValue;
 use memory_cache::MemoryLruCache;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, Mutex};
 use rlp::{Rlp, RlpStream};
 use types::header::Header;
 use types::ids::BlockId;
@@ -75,6 +75,7 @@ pub struct ValidatorSafeContract {
 	contract_address: Address,
 	validators: RwLock<MemoryLruCache<H256, SimpleList>>,
 	client: RwLock<Option<Weak<EngineClient>>>, // TODO [keorn]: remove
+	queued_reports: Mutex<Vec<(Address, Vec<u8>)>>,
 }
 
 // first proof is just a state proof call of `getValidators` at header's state.
@@ -190,11 +191,19 @@ fn prove_initial(contract_address: Address, header: &Header, caller: &Call) -> R
 }
 
 impl ValidatorSafeContract {
+
+	pub(crate) fn queue_report(&self, data: (Address, Vec<u8>)) {
+		self.queued_reports
+			.lock()
+			.push(data)
+	}
+
 	pub fn new(contract_address: Address) -> Self {
 		ValidatorSafeContract {
 			contract_address,
 			validators: RwLock::new(MemoryLruCache::new(MEMOIZE_CAPACITY)),
 			client: RwLock::new(None),
+			queued_reports: Mutex::new(vec![]),
 		}
 	}
 
@@ -303,7 +312,21 @@ impl ValidatorSet for ValidatorSafeContract {
 		}
 
 		trace!(target: "engine", "New block issued #{} ― calling emitInitiateChange()", header.number());
+
 		let (data, _decoder) = validator_set::functions::emit_initiate_change::call();
+		let mut queued_reports = self
+			.queued_reports
+			.lock();
+		while let Some((address, data)) = queued_reports.pop() {
+			match caller(self.contract_address, data.clone()) {
+				Ok(_) => warn!(target: "engine", "Reported malicious validator {}", address),
+				Err(s) => {
+					warn!(target: "engine", "Validator {} could not be reported {}", address, s);
+					queued_reports.push((address, data));
+					break
+				}
+			}
+		}
 		Ok(vec![(self.contract_address, data)])
 	}
 
