@@ -91,6 +91,9 @@ impl ValidatorSet for Multi {
 		self.map_children(header, &mut |set: &dyn ValidatorSet, first| set.on_prepare_block(first, header, call))
 	}
 
+	fn on_close_block(&self, header: &Header) -> Result<(), ::error::Error> {
+		self.map_children(header, &mut |set: &dyn ValidatorSet, _first| set.on_close_block(header))
+	}
 
 	fn on_epoch_begin(&self, _first: bool, header: &Header, call: &mut SystemCall) -> Result<(), ::error::Error> {
 		self.map_children(header, &mut |set: &dyn ValidatorSet, first| set.on_epoch_begin(first, header, call))
@@ -191,7 +194,7 @@ mod tests {
 
 		// Wrong signer for the first block.
 		client.miner().set_author(v1, Some("".into())).unwrap();
-		client.transact_contract(Default::default(), Default::default()).unwrap();
+		client.transact_contract(Default::default(), Default::default(), Default::default()).unwrap();
 		::client::EngineClient::update_sealing(&*client);
 		assert_eq!(client.chain_info().best_block_number, 0);
 		// Right signer for the first block.
@@ -199,14 +202,14 @@ mod tests {
 		::client::EngineClient::update_sealing(&*client);
 		assert_eq!(client.chain_info().best_block_number, 1);
 		// This time v0 is wrong.
-		client.transact_contract(Default::default(), Default::default()).unwrap();
+		client.transact_contract(Default::default(), Default::default(), Default::default()).unwrap();
 		::client::EngineClient::update_sealing(&*client);
 		assert_eq!(client.chain_info().best_block_number, 1);
 		client.miner().set_author(v1, Some("".into())).unwrap();
 		::client::EngineClient::update_sealing(&*client);
 		assert_eq!(client.chain_info().best_block_number, 2);
 		// v1 is still good.
-		client.transact_contract(Default::default(), Default::default()).unwrap();
+		client.transact_contract(Default::default(), Default::default(), Default::default()).unwrap();
 		::client::EngineClient::update_sealing(&*client);
 		assert_eq!(client.chain_info().best_block_number, 3);
 
