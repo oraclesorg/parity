@@ -17,6 +17,7 @@
 //! Validator lists.
 #![forbid(warnings)]
 
+#![forbid(warnings)]
 #[cfg(test)]
 mod test;
 mod simple_list;
