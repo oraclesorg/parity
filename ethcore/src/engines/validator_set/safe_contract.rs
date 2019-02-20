@@ -336,20 +336,10 @@ impl ValidatorSet for ValidatorSafeContract {
 		trace!(target: "engine", "New block issued #{} ― calling emitInitiateChange()", header.number());
 
 		let (data, _decoder) = validator_set::functions::emit_initiate_change::call();
-		let mut queued_reports = self
-			.queued_reports
-			.lock();
-		while let Some((address, data)) = queued_reports.pop() {
-			match caller(self.contract_address, data.clone()) {
-				Ok(_) => warn!(target: "engine", "Reported malicious validator {}", address),
-				Err(s) => {
-					warn!(target: "engine", "Validator {} could not be reported {}", address, s);
-					queued_reports.push((address, data));
-					break
-				}
-			}
-		}
-		Ok(vec![(self.contract_address, data)])
+		let mut returned_transactions = vec![(self.contract_address, data)];
+		let queued_reports = self.queued_reports.lock();
+		returned_transactions.extend_from_slice(&queued_reports[..]);
+		Ok(returned_transactions)
 	}
 
 	fn on_close_block(&self, _header: &Header) -> Result<(), ::error::Error> {

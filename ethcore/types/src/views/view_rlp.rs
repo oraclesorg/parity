@@ -127,6 +127,7 @@ impl<'a, 'view> Iterator for ViewRlpIterator<'a, 'view> {
 	}
 }
 
+/// Create a `ViewRlp`
 #[macro_export]
 /// Generate a view of an RLP type
 macro_rules! view {
