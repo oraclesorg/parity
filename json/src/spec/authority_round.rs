@@ -103,6 +103,12 @@ pub struct AuthorityRoundParams {
 	/// The block number at which the consensus engine switches from AuRa to AuRa with POSDAO
 	/// modifications.
 	pub posdao_transition: Option<Uint>,
+	/// These addresses will be reported as malicious at the given block numbers.
+	/// FOR TESTING ONLY!!
+	pub report_malicious: Option<BTreeMap<Uint, Address>>,
+	/// Block at which we start producing blocks with an invalid header (wrong step number).
+	/// FOR TESTING ONLY!!
+	pub faulty_blocks_transition: Option<BTreeMap<Address, Uint>>,
 }
 
 /// Authority engine deserialization.
