@@ -133,6 +133,12 @@ pub struct AuthorityRoundParams {
 	/// The addresses of contracts that determine the block gas limit with their associated block
 	/// numbers.
 	pub block_gas_limit_contract_transitions: BTreeMap<u64, Address>,
+	/// A list of addresses, and block numbers at which these should be reported as malicious.
+	/// FOR TESTING ONLY!!
+	pub report_malicious: BTreeMap<u64, Address>,
+	/// Block at which we start producing blocks with an invalid header (wrong step number).
+	/// FOR TESTING ONLY!!
+	pub faulty_blocks_transition: BTreeMap<Address, u64>,
 }
 
 const U16_MAX: usize = ::std::u16::MAX as usize;
@@ -222,6 +228,12 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			posdao_transition: p.posdao_transition.map(Into::into),
 			randomness_contract_address,
 			block_gas_limit_contract_transitions,
+			report_malicious: p.report_malicious.map_or_else(BTreeMap::new, |rm| {
+				rm.into_iter().map(|(block, addr)| (block.into(), addr.into())).collect()
+			}),
+			faulty_blocks_transition: p.faulty_blocks_transition.map_or_else(BTreeMap::new, |fbt| {
+				fbt.into_iter().map(|(addr, t)| (addr.into(), t.into())).collect()
+			}),
 		}
 	}
 }
@@ -598,6 +610,12 @@ pub struct AuthorityRound {
 	block_gas_limit_contract_transitions: BTreeMap<u64, Address>,
 	/// Memoized gas limit overrides, by block hash.
 	gas_limit_override_cache: Mutex<LruCache<H256, Option<U256>>>,
+	/// A list of addresses, and block numbers at which these should be reported as malicious.
+	/// FOR TESTING ONLY!!
+	report_malicious: BTreeMap<u64, Address>,
+	/// Block at which we start producing blocks with an invalid header (wrong step number).
+	/// FOR TESTING ONLY!!
+	faulty_blocks_transition: BTreeMap<Address, u64>,
 }
 
 // header-chain validator.
@@ -903,6 +921,8 @@ impl AuthorityRound {
 				randomness_contract_address: our_params.randomness_contract_address,
 				block_gas_limit_contract_transitions: our_params.block_gas_limit_contract_transitions,
 				gas_limit_override_cache: Mutex::new(LruCache::new(GAS_LIMIT_OVERRIDE_CACHE_CAPACITY)),
+				report_malicious: our_params.report_malicious,
+				faulty_blocks_transition: our_params.faulty_blocks_transition,
 			});
 
 		// Do not initialize timeouts for tests.
@@ -1095,7 +1115,16 @@ impl AuthorityRound {
 	}
 
 	fn address(&self) -> Option<Address> {
-		self.signer.read().as_ref().map(|s| s.address() )
+		self.signer.read().as_ref().map(|s| s.address())
+        }
+
+	fn should_produce_faulty_block(&self, header: &Header) -> bool {
+		let opt_signer = self.signer.read();
+		let addr = match opt_signer.as_ref() {
+			Some(signer) => signer.address(),
+			None => return false,
+		};
+		self.faulty_blocks_transition.get(&addr).map_or(false, |t| *t <= header.number())
 	}
 }
 
@@ -1389,10 +1418,18 @@ impl Engine for AuthorityRound {
 						self.report_skipped(header, step, parent_step, &*validators, epoch_transition_number);
 					}
 
-					let mut fields = vec![
-						encode(&step),
-						encode(&(H520::from(signature).as_bytes())),
-					];
+					let mut fields = if !self.should_produce_faulty_block(&header) {
+						vec![
+							encode(&step),
+							encode(&H520::from(signature).as_bytes()),
+						]
+					} else {
+						trace!(target: "engine", "GENERATING FAULTY SEAL!");
+						vec![
+							encode(&step.saturating_sub(3)),
+							encode(&H520::from(signature).as_bytes()),
+						]
+					};
 
 					if let Some(empty_steps_rlp) = empty_steps_rlp {
 						fields.push(empty_steps_rlp);
@@ -1554,6 +1591,14 @@ impl Engine for AuthorityRound {
 			)));
 		}
 
+		// TEST CODE: DO NOT MERGE INTO ANY PRODUCTION BRANCH!
+		if let Some(addr) = self.report_malicious.get(&header.number()) {
+			warn!(target: "engine", "Reporting {} as malicious FOR TESTING PURPOSES.", addr);
+			self.validators.report_malicious(
+				addr, self.epoch_set(header)?.1, header.number(), Default::default()
+			);
+		}
+
 		match verify_timestamp(&self.step.inner, header_step(header, self.empty_steps_transition)?) {
 			Err(BlockError::InvalidSeal) => {
 				// This check runs in Phase 1 where there is no guarantee that the parent block is
@@ -1589,10 +1634,12 @@ impl Engine for AuthorityRound {
 		// Ensure header is from the step after parent.
 		if step == parent_step
 			|| (header.number() >= self.validate_step_transition && step <= parent_step) {
-			warn!(target: "engine", "Multiple blocks proposed for step {}.", parent_step);
+			if !self.should_produce_faulty_block(&header) {
+                            warn!(target: "engine", "Multiple blocks proposed for step {}.", parent_step);
 
-			self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
-			Err(EngineError::DoubleVote(*header.author()))?;
+                            self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
+                            Err(EngineError::DoubleVote(*header.author()))?;
+			}
 		}
 
 		// Report malice if the validator produced other sibling blocks in the same step.
@@ -1673,7 +1720,7 @@ impl Engine for AuthorityRound {
 
 		if header.number() >= self.validate_score_transition {
 			let expected_difficulty = calculate_score(parent_step.into(), step.into(), empty_steps_len.into());
-			if header.difficulty() != &expected_difficulty {
+			if header.difficulty() != &expected_difficulty && !self.should_produce_faulty_block(&header) {
 				return Err(From::from(BlockError::InvalidDifficulty(Mismatch { expected: expected_difficulty, found: header.difficulty().clone() })));
 			}
 		}
@@ -1998,6 +2045,8 @@ mod tests {
 			posdao_transition: Some(0),
 			randomness_contract_address: BTreeMap::new(),
 			block_gas_limit_contract_transitions: BTreeMap::new(),
+			report_malicious: BTreeMap::new(),
+			faulty_blocks_transition: BTreeMap::new(),
 		};
 
 		// mutate aura params

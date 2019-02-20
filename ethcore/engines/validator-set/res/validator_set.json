@@ -66,5 +66,36 @@
 		"payable": false,
 		"stateMutability": "view",
 		"type": "function"
+	},
+	{
+		"constant": true,
+		"inputs": [
+			{
+				"name": "_reportingMiningAddress",
+				"type": "address"
+			},
+			{
+				"name": "_maliciousMiningAddress",
+				"type": "address"
+			},
+			{
+				"name": "_blockNumber",
+				"type": "uint256"
+			}
+		],
+		"name": "reportMaliciousCallable",
+		"outputs": [
+			{
+				"name": "callable",
+				"type": "bool"
+			},
+			{
+				"name": "removeReportingValidator",
+				"type": "bool"
+			}
+		],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
 	}
 ]

@@ -103,6 +103,12 @@ pub struct AuthorityRoundParams {
 	/// The addresses of contracts that determine the block gas limit starting from the block number
 	/// associated with each of those contracts.
 	pub block_gas_limit_contract_transitions: Option<BTreeMap<Uint, Address>>,
+	/// These addresses will be reported as malicious at the given block numbers.
+	/// FOR TESTING ONLY!!
+	pub report_malicious: Option<BTreeMap<Uint, Address>>,
+	/// Block at which we start producing blocks with an invalid header (wrong step number).
+	/// FOR TESTING ONLY!!
+	pub faulty_blocks_transition: Option<BTreeMap<Address, Uint>>,
 }
 
 /// Authority engine deserialization.
