@@ -16,7 +16,6 @@
 
 //! General error types for use in ethcore.
 #![allow(deprecated)]
-
 use std::{fmt, error};
 use std::time::SystemTime;
 
