@@ -91,8 +91,8 @@ impl ValidatorSet for Multi {
 		self.map_children(header, &mut |set: &dyn ValidatorSet, first| set.on_prepare_block(first, header, call))
 	}
 
-	fn on_close_block(&self, header: &Header) -> Result<(), ::error::Error> {
-		self.map_children(header, &mut |set: &dyn ValidatorSet, _first| set.on_close_block(header))
+	fn on_close_block(&self, header: &Header, address: &Address) -> Result<(), ::error::Error> {
+		self.map_children(header, &mut |set: &dyn ValidatorSet, _first| set.on_close_block(header, address))
 	}
 
 	fn on_epoch_begin(&self, _first: bool, header: &Header, call: &mut SystemCall) -> Result<(), ::error::Error> {

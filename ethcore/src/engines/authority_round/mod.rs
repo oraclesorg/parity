@@ -1217,7 +1217,12 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			},
 		};
 
-		block_reward::apply_block_rewards(&rewards, block, &self.machine)
+		block_reward::apply_block_rewards(&rewards, block, &self.machine)?;
+		if let Some(ref address) = self.signer.read().address() {
+			self.validators.on_close_block(block.header(), address)
+		} else {
+			Ok(())
+		}
 	}
 
 	/// Make calls to the randomness and validator set contracts.

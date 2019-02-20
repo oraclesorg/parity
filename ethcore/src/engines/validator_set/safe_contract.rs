@@ -36,8 +36,11 @@ use unexpected::Mismatch;
 use client::EngineClient;
 use machine::{AuxiliaryData, Call, EthereumMachine, AuxiliaryRequest};
 use super::{SystemCall, ValidatorSet, simple_list::SimpleList};
+use std::collections::VecDeque;
 
 use_contract!(validator_set, "res/contracts/validator_set_aura.json");
+
+const MAX_QUEUED_REPORTS: usize = 1000;
 
 const MEMOIZE_CAPACITY: usize = 500;
 
@@ -76,7 +79,7 @@ pub struct ValidatorSafeContract {
 	contract_address: Address,
 	validators: RwLock<MemoryLruCache<H256, SimpleList>>,
 	client: RwLock<Option<Weak<EngineClient>>>, // TODO [keorn]: remove
-	queued_reports: Mutex<Vec<(Address, Vec<u8>)>>,
+	queued_reports: Mutex<VecDeque<(Address, u64, Vec<u8>)>>,
 }
 
 // first proof is just a state proof call of `getValidators` at header's state.
@@ -208,16 +211,18 @@ impl ValidatorSafeContract {
 		}
 	}
 
-	pub(crate) fn queue_report(&self, data: (Address, Vec<u8>)) {
+	pub(crate) fn queue_report(&self, data: (Address, u64, Vec<u8>)) {
 		self.queued_reports
 			.lock()
-			.push(data)
+			.push_back(data)
 	}
 
-	fn queued_reports(&self) -> Vec<(Address, Bytes)> {
+	fn queued_reports(&self) -> Vec<(Address, u64, Bytes)> {
 		self.queued_reports
 			.lock()
-			.clone()
+			.iter()
+			.cloned()
+			.collect()
 	}
 
 	pub fn new(contract_address: Address) -> Self {
@@ -225,7 +230,7 @@ impl ValidatorSafeContract {
 			contract_address,
 			validators: RwLock::new(MemoryLruCache::new(MEMOIZE_CAPACITY)),
 			client: RwLock::new(None),
-			queued_reports: Mutex::new(vec![]),
+			queued_reports: Mutex::new(VecDeque::new()),
 		}
 	}
 
@@ -325,32 +330,57 @@ impl ValidatorSet for ValidatorSafeContract {
 		-> Result<Vec<(Address, Bytes)>, ::error::Error>
 	{
 		let (data, decoder) = validator_set::functions::emit_initiate_change_callable::call();
-		if !caller(self.contract_address, data)
+		let mut returned_transactions = if !caller(self.contract_address, data)
 			.and_then(|x| decoder.decode(&x)
 			.map_err(|x| format!("chain spec bug: could not decode: {:?}", x)))
 			.map_err(::engines::EngineError::FailedSystemCall)? {
 			trace!(target: "engine", "New block #{} issued ― no need to call emitInitiateChange()", header.number());
-			return Ok(Vec::new());
-		}
-
-		trace!(target: "engine", "New block issued #{} ― calling emitInitiateChange()", header.number());
-
-		let (data, _decoder) = validator_set::functions::emit_initiate_change::call();
-		let mut returned_transactions = vec![(self.contract_address, data)];
+			Vec::new()
+		} else {
+			trace!(target: "engine", "New block issued #{} ― calling emitInitiateChange()", header.number());
+			let (data, _decoder) = validator_set::functions::emit_initiate_change::call();
+			vec![(self.contract_address, data)]
+		};
 		let queued_reports = self.queued_reports.lock();
-		returned_transactions.extend_from_slice(&queued_reports[..]);
+		for i in queued_reports.iter() {
+			returned_transactions.push((i.0, i.2.clone()))
+		}
 		Ok(returned_transactions)
 	}
 
-	fn on_close_block(&self, _header: &Header) -> Result<(), ::error::Error> {
-		let nonce = self.client.read()
+	fn on_close_block(&self, _header: &Header, address: &Address) -> Result<(), ::error::Error> {
+		let client = self.client.read()
 			.as_ref()
 			.and_then(Weak::upgrade)
-			.ok_or_else(||::error::Error::from("No client!"))?
+			.ok_or_else(|| ::error::Error::from("No client!"))?;
+		let client = client
+			.as_full_client()
+			.ok_or_else(|| ::error::Error::from("No full client!"))?;
+		let nonce = client
 			.nonce(&self.contract_address, BlockId::Latest)
 			.ok_or_else(||"No nonce!")?;
-		for (i, (_address, data)) in self.queued_reports().into_iter().enumerate() {
+		for (i, (_address, _block, data)) in self.queued_reports().into_iter().enumerate() {
 			self.transact(data, nonce + U256::from(i))?
+		}
+		let mut queue = self.queued_reports.lock();
+		'outer: while queue.len() > MAX_QUEUED_REPORTS {
+			let result = {
+				let (malicious_validator_address, block, _data) = queue
+					.front()
+					.expect("pop_front() only panics if queue.len() == 0; \
+						we already checked that queue.len() > MAX_QUEUED_REPORTS; qed");
+				let (data, decoder) = validator_set::functions::malice_reported_for_block::call(
+					*malicious_validator_address, *block);
+				let result = client.call_contract(BlockId::Latest, self.contract_address, data)?;
+				decoder.decode(&result[..]).map_err(|e| e.to_string())?
+			};
+			for i in result {
+				if *address == Address::from(i) {
+					drop(queue.pop_front());
+					continue 'outer;
+				}
+			}
+			break
 		}
 		Ok(())
 	}

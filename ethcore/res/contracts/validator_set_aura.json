@@ -61,5 +61,28 @@
 		],
 		"name": "InitiateChange",
 		"type": "event"
+	},
+	{
+		"constant": true,
+		"inputs": [
+			{
+				"name": "_maliciousMiningAddress",
+				"type": "address"
+			},
+			{
+				"name": "_blockNumber",
+				"type": "uint256"
+			}
+		],
+		"name": "maliceReportedForBlock",
+		"outputs": [
+			{
+				"name": "",
+				"type": "address[]"
+			}
+		],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
 	}
 ]

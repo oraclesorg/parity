@@ -95,7 +95,7 @@ pub trait ValidatorSet: Send + Sync + 'static {
 	}
 
 	/// Called on the close of every block.
-	fn on_close_block(&self, _header: &Header) -> Result<(), ::error::Error> {
+	fn on_close_block(&self, _header: &Header, _address: &Address) -> Result<(), ::error::Error> {
 		Ok(())
 	}
 

@@ -84,8 +84,8 @@ impl ValidatorSet for ValidatorContract {
 		self.validators.on_epoch_begin(first, header, call)
 	}
 
-	fn on_close_block(&self, header: &Header) -> Result<(), ::error::Error> {
-		self.validators.on_close_block(header)
+	fn on_close_block(&self, header: &Header, address: &Address) -> Result<(), ::error::Error> {
+		self.validators.on_close_block(header, address)
 	}
 
 	fn genesis_epoch_data(&self, header: &Header, call: &Call) -> Result<Vec<u8>, String> {
@@ -121,13 +121,13 @@ impl ValidatorSet for ValidatorContract {
 		self.validators.count_with_caller(bh, caller)
 	}
 
-	fn report_malicious(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber, proof: Bytes) {
+	fn report_malicious(&self, address: &Address, set_block: BlockNumber, block: BlockNumber, proof: Bytes) {
 		let data = validator_report::functions::report_malicious::encode_input(*address, block, proof);
 		match self.transact(data.clone()) {
-			Ok(_) => warn!(target: "engine", "Reported malicious validator {}", address),
+			Ok(_) => warn!(target: "engine", "Reported malicious validator {} at block {}", address, set_block),
 			Err(s) => {
-				warn!(target: "engine", "Validator {} could not be reported {}", address, s);
-				self.validators.queue_report((*address, data))
+				warn!(target: "engine", "Validator {} could not be reported ({}) on block {}", address, s, set_block);
+				self.validators.queue_report((*address, set_block, data))
 			}
 		}
 	}
