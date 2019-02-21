@@ -40,7 +40,7 @@ use std::collections::VecDeque;
 
 use_contract!(validator_set, "res/contracts/validator_set_aura.json");
 
-const MAX_QUEUED_REPORTS: usize = 1000;
+const MAX_QUEUED_REPORTS: usize = 0;
 
 const MEMOIZE_CAPACITY: usize = 500;
 
@@ -217,14 +217,6 @@ impl ValidatorSafeContract {
 			.push_back(data)
 	}
 
-	fn queued_reports(&self) -> Vec<(Address, u64, Bytes)> {
-		self.queued_reports
-			.lock()
-			.iter()
-			.cloned()
-			.collect()
-	}
-
 	pub fn new(contract_address: Address) -> Self {
 		ValidatorSafeContract {
 			contract_address,
@@ -359,11 +351,28 @@ impl ValidatorSet for ValidatorSafeContract {
 		let nonce = client
 			.nonce(&self.contract_address, BlockId::Latest)
 			.ok_or_else(||"No nonce!")?;
-		for (i, (_address, _block, data)) in self.queued_reports().into_iter().enumerate() {
-			self.transact(data, nonce + U256::from(i))?
+		let mut i = 0u64;
+		debug!(target: "engine", "Checking for cached reports");
+		for (address, block, data) in self.queued_reports.lock().iter() {
+			debug!(target: "engine", "Trying to report");
+			loop {
+				match self.transact(data.clone(), nonce + U256::from(i)) {
+					Ok(()) => break,
+					Err(err) => {
+						let msg = format!("{}", err);
+						if msg != "Transaction import error: Transaction error (No longer valid)" {
+							warn!(target: "engine", "Cannot report validator {} for misbehavior on block {}: {}", address, block, err);
+							break
+						}
+					}
+				}
+				i += 1
+			};
+			i += 1
 		}
 		let mut queue = self.queued_reports.lock();
 		'outer: while queue.len() > MAX_QUEUED_REPORTS {
+			debug!(target: "engine", "Checking if report can be removed from cache");
 			let result = {
 				let (malicious_validator_address, block, _data) = queue
 					.front()
@@ -372,11 +381,16 @@ impl ValidatorSet for ValidatorSafeContract {
 				let (data, decoder) = validator_set::functions::malice_reported_for_block::call(
 					*malicious_validator_address, *block);
 				let result = client.call_contract(BlockId::Latest, self.contract_address, data)?;
-				decoder.decode(&result[..]).map_err(|e| e.to_string())?
+				decoder.decode(&result[..]).map_err(|e| {
+					warn!("Could not decode: {}", e);
+					e.to_string()
+				})?
 			};
+			debug!(target: "engine", "Got data from contract: {:?}", result);
 			for i in result {
 				if *address == Address::from(i) {
 					drop(queue.pop_front());
+					debug!(target: "engine", "Successfully removed report from report cache");
 					continue 'outer;
 				}
 			}

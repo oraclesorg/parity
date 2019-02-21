@@ -52,16 +52,17 @@ impl ValidatorContract {
 }
 
 impl ValidatorContract {
-	fn transact(&self, data: Bytes) -> Result<(), String> {
+	fn transact(&self, data: Bytes) -> Result<(), ::error::Error> {
 		let client = self.client.read().as_ref()
 			.and_then(Weak::upgrade)
 			.ok_or_else(|| "No client!")?;
 
 		match client.as_full_client() {
 			Some(c) => {
-				c.transact(Action::Call(self.contract_address), data, None, Some(0.into()), None)
-					.map_err(|e| format!("Transaction import error: {}", e))?;
-				Ok(())
+				match c.transact(Action::Call(self.contract_address), data, None, Some(0.into()), None) {
+					Ok(()) | Err(types::transaction::Error::AlreadyImported) => Ok(()),
+					Err(e) => Err(e)?,
+				}
 			},
 			None => Err("No full client!".into()),
 		}
@@ -124,7 +125,7 @@ impl ValidatorSet for ValidatorContract {
 	fn report_malicious(&self, address: &Address, set_block: BlockNumber, block: BlockNumber, proof: Bytes) {
 		let data = validator_report::functions::report_malicious::encode_input(*address, block, proof);
 		match self.transact(data.clone()) {
-			Ok(_) => warn!(target: "engine", "Reported malicious validator {} at block {}", address, set_block),
+			Ok(()) => warn!(target: "engine", "Reported malicious validator {} at block {}", address, set_block),
 			Err(s) => {
 				warn!(target: "engine", "Validator {} could not be reported ({}) on block {}", address, s, set_block);
 				self.validators.queue_report((*address, set_block, data))
@@ -135,7 +136,7 @@ impl ValidatorSet for ValidatorContract {
 	fn report_benign(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber) {
 		let data = validator_report::functions::report_benign::encode_input(*address, block);
 		match self.transact(data) {
-			Ok(_) => warn!(target: "engine", "Reported benign validator misbehaviour {}", address),
+			Ok(()) => warn!(target: "engine", "Reported benign validator misbehaviour {}", address),
 			Err(s) => warn!(target: "engine", "Validator {} could not be reported {}", address, s),
 		}
 	}
