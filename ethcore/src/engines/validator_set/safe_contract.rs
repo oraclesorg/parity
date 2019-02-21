@@ -335,7 +335,7 @@ impl ValidatorSet for ValidatorSafeContract {
 		};
 		let queued_reports = self.queued_reports.lock();
 		for i in queued_reports.iter() {
-			returned_transactions.push((i.0, i.2.clone()))
+			returned_transactions.push((self.contract_address, i.2.clone()))
 		}
 		Ok(returned_transactions)
 	}
