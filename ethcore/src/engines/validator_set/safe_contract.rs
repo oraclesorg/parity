@@ -40,7 +40,11 @@ use std::collections::VecDeque;
 
 use_contract!(validator_set, "res/contracts/validator_set_aura.json");
 
-const MAX_QUEUED_REPORTS: usize = 0;
+/// The minimum number of reports to keep queued.
+const MIN_QUEUED_REPORTS: usize = 5000;
+
+/// The maximum number of reports to keep queued.
+const MAX_QUEUED_REPORTS: usize = 5000;
 
 const MEMOIZE_CAPACITY: usize = 500;
 
@@ -195,17 +199,17 @@ fn prove_initial(contract_address: Address, header: &Header, caller: &Call) -> R
 }
 
 impl ValidatorSafeContract {
-
-	fn transact(&self, data: Bytes, nonce: U256) -> Result<(), String> {
+	fn transact(&self, data: Bytes, nonce: U256) -> Result<(), ::error::Error> {
 		let client = self.client.read().as_ref()
 			.and_then(Weak::upgrade)
 			.ok_or_else(|| "No client!")?;
 
 		match client.as_full_client() {
 			Some(c) => {
-				c.transact(Action::Call(self.contract_address), data, None, Some(0.into()), Some(nonce))
-					.map_err(|e| format!("Transaction import error: {}", e))?;
-				Ok(())
+				match c.transact(Action::Call(self.contract_address), data, None, Some(0.into()), Some(nonce)) {
+					Ok(()) | Err(types::transaction::Error::AlreadyImported) => Ok(()),
+					Err(e) => Err(e)?,
+				}
 			},
 			None => Err("No full client!".into()),
 		}
@@ -371,13 +375,13 @@ impl ValidatorSet for ValidatorSafeContract {
 			i += 1
 		}
 		let mut queue = self.queued_reports.lock();
-		'outer: while queue.len() > MAX_QUEUED_REPORTS {
+		while queue.len() > MIN_QUEUED_REPORTS {
 			debug!(target: "engine", "Checking if report can be removed from cache");
 			let result = {
 				let (malicious_validator_address, block, _data) = queue
 					.front()
-					.expect("pop_front() only panics if queue.len() == 0; \
-						we already checked that queue.len() > MAX_QUEUED_REPORTS; qed");
+					.expect("queue.front() only returns `None` if queue.len() == 0; \
+						we already checked that queue.len() > MIN_QUEUED_REPORTS; qed");
 				let (data, decoder) = validator_set::functions::malice_reported_for_block::call(
 					*malicious_validator_address, *block);
 				let result = client.call_contract(BlockId::Latest, self.contract_address, data)?;
@@ -387,15 +391,18 @@ impl ValidatorSet for ValidatorSafeContract {
 				})?
 			};
 			debug!(target: "engine", "Got data from contract: {:?}", result);
-			for i in result {
-				if *address == Address::from(i) {
-					drop(queue.pop_front());
-					debug!(target: "engine", "Successfully removed report from report cache");
-					continue 'outer;
-				}
+			if result.contains(&address) {
+				drop(queue.pop_front());
+				debug!(target: "engine", "Successfully removed report from report cache");
 			}
-			break
 		}
+
+		while queue.len() > MAX_QUEUED_REPORTS {
+			warn!(target: "engine", "Removing report from report cache, even though it has not \
+			been finalized");
+			drop(queue.pop_front())
+		}
+
 		Ok(())
 	}
 
