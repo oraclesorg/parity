@@ -41,10 +41,10 @@ use std::collections::VecDeque;
 use_contract!(validator_set, "res/contracts/validator_set_aura.json");
 
 /// The minimum number of reports to keep queued.
-const MIN_QUEUED_REPORTS: usize = 5000;
+const MIN_QUEUED_REPORTS: usize = 100;
 
 /// The maximum number of reports to keep queued.
-const MAX_QUEUED_REPORTS: usize = 5000;
+const MAX_QUEUED_REPORTS: usize = 500;
 
 const MEMOIZE_CAPACITY: usize = 500;
 
