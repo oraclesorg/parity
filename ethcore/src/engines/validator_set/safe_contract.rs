@@ -338,8 +338,8 @@ impl ValidatorSet for ValidatorSafeContract {
 			vec![(self.contract_address, data)]
 		};
 		let queued_reports = self.queued_reports.lock();
-		for i in queued_reports.iter() {
-			returned_transactions.push((self.contract_address, i.2.clone()))
+		for (_address, _block, data) in queued_reports.iter().take(10) {
+			returned_transactions.push((self.contract_address, data.clone()))
 		}
 		Ok(returned_transactions)
 	}
