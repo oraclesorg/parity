@@ -902,7 +902,7 @@ impl BlockChainClient for TestBlockChainClient {
 		data: Bytes,
 		gas: Option<U256>,
 		gas_price: Option<U256>,
-		nonce: Option<U256>,
+		_nonce: Option<U256>,
 	) -> Result<(), transaction::Error>
 	{
 		let signed = self.create_transaction(action, data, gas, gas_price, None)?;
