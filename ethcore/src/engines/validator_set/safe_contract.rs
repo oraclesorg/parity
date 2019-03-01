@@ -41,7 +41,7 @@ use std::collections::VecDeque;
 use_contract!(validator_set, "res/contracts/validator_set_aura.json");
 
 /// The minimum number of reports to keep queued.
-const MIN_QUEUED_REPORTS: usize = 5;
+// const MIN_QUEUED_REPORTS: usize = 5;
 
 /// The maximum number of reports to keep queued.
 const MAX_QUEUED_REPORTS: usize = 10;
@@ -344,7 +344,7 @@ impl ValidatorSet for ValidatorSafeContract {
 		Ok(returned_transactions)
 	}
 
-	fn on_close_block(&self, _header: &Header, address: &Address) -> Result<(), ::error::Error> {
+	fn on_close_block(&self, header: &Header, address: &Address) -> Result<(), ::error::Error> {
 		let client = self.client.read()
 			.as_ref()
 			.and_then(Weak::upgrade)
@@ -375,27 +375,31 @@ impl ValidatorSet for ValidatorSafeContract {
 			i += 1
 		}
 		let mut queue = self.queued_reports.lock();
-		while queue.len() > MIN_QUEUED_REPORTS {
+		let new_reports = queue.iter().filter(|&&(malicious_validator_address, block, ref _data)| {
 			debug!(target: "engine", "Checking if report can be removed from cache");
 			let result = {
-				let (malicious_validator_address, block, _data) = queue
-					.front()
-					.expect("queue.front() only returns `None` if queue.len() == 0; \
-						we already checked that queue.len() > MIN_QUEUED_REPORTS; qed");
+				if block < header.number() {
+					return true // FIXME can this happen?
+				}
+				if block > 100 && block - 100 > header.number() {
+					return false
+				}
 				let (data, decoder) = validator_set::functions::malice_reported_for_block::call(
-					*malicious_validator_address, *block);
-				let result = client.call_contract(BlockId::Latest, self.contract_address, data)?;
-				decoder.decode(&result[..]).map_err(|e| {
-					warn!("Could not decode: {}", e);
-					e.to_string()
-				})?
+					malicious_validator_address, block);
+				let result = client.call_contract(BlockId::Latest, self.contract_address, data)
+					.expect("this is a bug in the genesis block; we assume that the genesis block is correct; qed");
+				decoder.decode(&result[..])
+					.expect("this is a bug in the genesis block; we assume that the genesis block is correct; qed")
 			};
 			debug!(target: "engine", "Got data from contract: {:?}", result);
 			if result.contains(&address) {
-				drop(queue.pop_front());
 				debug!(target: "engine", "Successfully removed report from report cache");
+				return false
 			}
-		}
+			return true
+		}).cloned().collect();
+
+		*queue = new_reports;
 
 		while queue.len() > MAX_QUEUED_REPORTS {
 			warn!(target: "engine", "Removing report from report cache, even though it has not \
