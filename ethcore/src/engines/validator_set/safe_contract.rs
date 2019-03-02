@@ -387,9 +387,9 @@ impl ValidatorSet for ValidatorSafeContract {
 				let (data, decoder) = validator_set::functions::malice_reported_for_block::call(
 					malicious_validator_address, block);
 				let result = client.call_contract(BlockId::Latest, self.contract_address, data)
-					.expect("this is a bug in the genesis block; we assume that the genesis block is correct; qed");
+					.expect("this is a bug in the genesis block; either the validator set contract is missing, or it is invalid; this is a fatal error in the configuration of Parity, so we cannot recover; qed");
 				decoder.decode(&result[..])
-					.expect("this is a bug in the genesis block; we assume that the genesis block is correct; qed")
+					.expect("this is a bug in the genesis block; either the validator set contract is missing, or it is invalid; this is a fatal error in the configuration of Parity, so we cannot recover; qed")
 			};
 			debug!(target: "engine", "Got data from contract: {:?}", result);
 			if result.contains(&address) {
