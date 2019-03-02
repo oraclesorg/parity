@@ -378,11 +378,12 @@ impl ValidatorSet for ValidatorSafeContract {
 		let new_reports = queue.iter().filter(|&&(malicious_validator_address, block, ref _data)| {
 			debug!(target: "engine", "Checking if report can be removed from cache");
 			let result = {
-				if block < header.number() {
-					return true // FIXME can this happen?
+				let current_block_number = header.number();
+				if block > current_block_number {
+					return true // FIXME should we keep this report?
 				}
-				if block > 100 && block - 100 > header.number() {
-					return false
+				if current_block_number > 100 && current_block_number - 100 > block {
+					return false // Report is too old and cannot be used
 				}
 				let (data, decoder) = validator_set::functions::malice_reported_for_block::call(
 					malicious_validator_address, block);
