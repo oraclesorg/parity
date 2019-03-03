@@ -380,7 +380,7 @@ impl ValidatorSet for ValidatorSafeContract {
 			let result = {
 				let current_block_number = header.number();
 				if block > current_block_number {
-					return true // FIXME should we keep this report?
+					return false // Report cannot be used, as it is for a block that isn’t in the current chain
 				}
 				if current_block_number > 100 && current_block_number - 100 > block {
 					return false // Report is too old and cannot be used
