@@ -328,6 +328,7 @@ fn println_trace_main(s: String) {
 	}
 }
 
+/// Simple tracing macro
 #[macro_export]
 macro_rules! trace_main {
 	($arg:expr) => (println_trace_main($arg.into()));
