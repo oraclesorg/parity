@@ -40,9 +40,6 @@ use std::collections::VecDeque;
 
 use_contract!(validator_set, "res/contracts/validator_set_aura.json");
 
-/// The minimum number of reports to keep queued.
-// const MIN_QUEUED_REPORTS: usize = 5;
-
 /// The maximum number of reports to keep queued.
 const MAX_QUEUED_REPORTS: usize = 10;
 
@@ -375,7 +372,7 @@ impl ValidatorSet for ValidatorSafeContract {
 			i += 1
 		}
 		let mut queue = self.queued_reports.lock();
-		let new_reports = queue.iter().filter(|&&(malicious_validator_address, block, ref _data)| {
+		queue.retain(|&(malicious_validator_address, block, ref _data)| {
 			debug!(target: "engine", "Checking if report can be removed from cache");
 			let result = {
 				let current_block_number = header.number();
@@ -398,9 +395,7 @@ impl ValidatorSet for ValidatorSafeContract {
 				return false
 			}
 			return true
-		}).cloned().collect();
-
-		*queue = new_reports;
+		});
 
 		while queue.len() > MAX_QUEUED_REPORTS {
 			warn!(target: "engine", "Removing report from report cache, even though it has not \
