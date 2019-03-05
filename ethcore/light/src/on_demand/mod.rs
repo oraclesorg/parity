@@ -69,6 +69,7 @@ pub const DEFAULT_MAX_REQUEST_BACKOFF_ROUNDS: usize = 10;
 pub const DEFAULT_NUM_CONSECUTIVE_FAILED_REQUESTS: usize = 1;
 
 /// OnDemand related errors
+#[allow(deprecated)]
 pub mod error {
 	use futures::sync::oneshot::Canceled;
 

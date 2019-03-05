@@ -105,12 +105,14 @@ pub fn run_test_file<H: FnMut(&str, HookType)>(
 }
 
 #[cfg(test)]
+/// Executes a test
 macro_rules! test {
 	($name: expr, $skip: expr) => {
 		::json_tests::test_common::run_test_path(::std::path::Path::new(concat!("res/ethereum/tests/", $name)), &$skip, do_json_test, &mut |_, _| ());
 	}
 }
 
+/// Declares a test
 #[macro_export]
 macro_rules! declare_test {
 	(skip => $arr: expr, $id: ident, $name: expr) => {

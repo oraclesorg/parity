@@ -18,13 +18,19 @@ use ethcore;
 use io;
 use ethcore_private_tx;
 
-error_chain! {
-	links {
-		PrivateTransactions(ethcore_private_tx::Error, ethcore_private_tx::ErrorKind);
-	}
+#[allow(deprecated)]
+mod internal {
+	use super::*;
+	error_chain! {
+		links {
+			PrivateTransactions(ethcore_private_tx::Error, ethcore_private_tx::ErrorKind);
+		}
 
-	foreign_links {
-		Ethcore(ethcore::error::Error);
-		IoError(io::IoError);
+		foreign_links {
+			Ethcore(ethcore::error::Error);
+			IoError(io::IoError);
+		}
 	}
 }
+
+pub use self::internal::*;

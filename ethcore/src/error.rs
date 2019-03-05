@@ -15,6 +15,7 @@
 // along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
 //! General error types for use in ethcore.
+#![allow(deprecated)]
 
 use std::{fmt, error};
 use std::time::SystemTime;
@@ -161,7 +162,7 @@ error_chain! {
 	}
 
 	errors {
-		#[doc = "Queue is full"]
+		/// Queue is full
 		Full(limit: usize) {
 			description("Queue is full")
 			display("The queue is full ({})", limit)
@@ -179,40 +180,22 @@ error_chain! {
 	}
 
 	errors {
-		#[doc = "Already in the block chain."]
+		/// Already in the block chain.
 		AlreadyInChain {
 			description("Block already in chain")
 			display("Block already in chain")
 		}
 
-		#[doc = "Already in the block queue"]
+		/// Already in the block queue
 		AlreadyQueued {
 			description("block already in the block queue")
 			display("block already in the block queue")
 		}
 
-		#[doc = "Already marked as bad from a previous import (could mean parent is bad)."]
+		/// Already marked as bad from a previous import (could mean parent is bad)
 		KnownBad {
 			description("block known to be bad")
 			display("block known to be bad")
-		}
-	}
-}
-
-/// Api-level error for transaction import
-#[derive(Debug, Clone)]
-pub enum TransactionImportError {
-	/// Transaction error
-	Transaction(TransactionError),
-	/// Other error
-	Other(String),
-}
-
-impl From<Error> for TransactionImportError {
-	fn from(e: Error) -> Self {
-		match e {
-			Error(ErrorKind::Transaction(transaction_error), _) => TransactionImportError::Transaction(transaction_error),
-			_ => TransactionImportError::Other(format!("other block import error: {:?}", e)),
 		}
 	}
 }
@@ -269,6 +252,24 @@ error_chain! {
 		UnknownEngineName(name: String) {
 			description("Unknown engine name")
 			display("Unknown engine name ({})", name)
+		}
+	}
+}
+
+/// Api-level error for transaction import
+#[derive(Debug, Clone)]
+pub enum TransactionImportError {
+	/// Transaction error
+	Transaction(TransactionError),
+	/// Other error
+	Other(String),
+}
+
+impl From<Error> for TransactionImportError {
+	fn from(e: Error) -> Self {
+		match e {
+			Error(ErrorKind::Transaction(transaction_error), _) => TransactionImportError::Transaction(transaction_error),
+			_ => TransactionImportError::Other(format!("other block import error: {:?}", e)),
 		}
 	}
 }

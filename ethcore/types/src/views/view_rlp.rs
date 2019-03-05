@@ -128,6 +128,7 @@ impl<'a, 'view> Iterator for ViewRlpIterator<'a, 'view> {
 }
 
 #[macro_export]
+/// Generate a view of an RLP type
 macro_rules! view {
 	($view: ident, $bytes: expr) => {
 		$view::new($crate::views::ViewRlp::new($bytes, file!(), line!()))

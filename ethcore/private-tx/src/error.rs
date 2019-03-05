@@ -14,6 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
+//! Error types for the	`private-tx` crate.
+#![allow(deprecated)]
+
 use ethereum_types::Address;
 use rlp::DecoderError;
 use ethtrie::TrieError;
@@ -23,154 +26,159 @@ use types::transaction::Error as TransactionError;
 use ethkey::Error as KeyError;
 use txpool::Error as TxPoolError;
 
-error_chain! {
-	foreign_links {
-		Io(::std::io::Error) #[doc = "Error concerning the Rust standard library's IO subsystem."];
-		Decoder(DecoderError) #[doc = "RLP decoding error."];
-		Trie(TrieError) #[doc = "Error concerning TrieDBs."];
-		Txpool(TxPoolError) #[doc = "Tx pool error."];
-	}
-
-	errors {
-		#[doc = "Encryption error."]
-		Encrypt(err: String) {
-			description("Encryption error"),
-			display("Encryption error. ({})", err),
+#[allow(deprecated)]
+mod internal {
+	use super::*;
+	error_chain! {
+		foreign_links {
+			Io(::std::io::Error) #[doc = "Error concerning the Rust standard library's IO subsystem."];
+			Decoder(DecoderError) #[doc = "RLP decoding error."];
+			Trie(TrieError) #[doc = "Error concerning TrieDBs."];
+			Txpool(TxPoolError) #[doc = "Tx pool error."];
 		}
 
-		#[doc = "Decryption error."]
-		Decrypt(err: String) {
-			description("Decryption error"),
-			display("Decryption error. ({})", err),
-		}
+		errors {
+			#[doc = "Encryption error."]
+			Encrypt(err: String) {
+				description("Encryption error"),
+				display("Encryption error. ({})", err),
+			}
 
-		#[doc = "Address not authorized."]
-		NotAuthorised(address: Address) {
-			description("Address not authorized"),
-			display("Private transaction execution is not authorised for {}", address),
-		}
+			#[doc = "Decryption error."]
+			Decrypt(err: String) {
+				description("Decryption error"),
+				display("Decryption error. ({})", err),
+			}
 
-		#[doc = "Transaction creates more than one contract."]
-		TooManyContracts {
-			description("Transaction creates more than one contract."),
-			display("Private transaction created too many contracts"),
-		}
+			#[doc = "Address not authorized."]
+			NotAuthorised(address: Address) {
+				description("Address not authorized"),
+				display("Private transaction execution is not authorised for {}", address),
+			}
 
-		#[doc = "Contract call error."]
-		Call(err: String) {
-			description("Contract call error."),
-			display("Contract call error. ({})", err),
-		}
+			#[doc = "Transaction creates more than one contract."]
+			TooManyContracts {
+				description("Transaction creates more than one contract."),
+				display("Private transaction created too many contracts"),
+			}
 
-		#[doc = "State is not available."]
-		StatePruned {
-			description("State is not available."),
-			display("State is not available"),
-		}
+			#[doc = "Contract call error."]
+			Call(err: String) {
+				description("Contract call error."),
+				display("Contract call error. ({})", err),
+			}
 
-		#[doc = "State is incorrect."]
-		StateIncorrect {
-			description("State is incorrect."),
-			display("State is incorrect"),
-		}
+			#[doc = "State is not available."]
+			StatePruned {
+				description("State is not available."),
+				display("State is not available"),
+			}
 
-		#[doc = "Wrong private transaction type."]
-		BadTransactonType {
-			description("Wrong private transaction type."),
-			display("Wrong private transaction type"),
-		}
+			#[doc = "State is incorrect."]
+			StateIncorrect {
+				description("State is incorrect."),
+				display("State is incorrect"),
+			}
 
-		#[doc = "Contract does not exist or was not created."]
-		ContractDoesNotExist {
-			description("Contract does not exist or was not created."),
-			display("Contract does not exist or was not created"),
-		}
+			#[doc = "Wrong private transaction type."]
+			BadTransactonType {
+				description("Wrong private transaction type."),
+				display("Wrong private transaction type"),
+			}
 
-		#[doc = "Reference to the client is corrupted."]
-		ClientIsMalformed {
-			description("Reference to the client is corrupted."),
-			display("Reference to the client is corrupted"),
-		}
+			#[doc = "Contract does not exist or was not created."]
+			ContractDoesNotExist {
+				description("Contract does not exist or was not created."),
+				display("Contract does not exist or was not created"),
+			}
 
-		#[doc = "Queue of private transactions for verification is full."]
-		QueueIsFull {
-			description("Queue of private transactions for verification is full."),
-			display("Queue of private transactions for verification is full"),
-		}
+			#[doc = "Reference to the client is corrupted."]
+			ClientIsMalformed {
+				description("Reference to the client is corrupted."),
+				display("Reference to the client is corrupted"),
+			}
 
-		#[doc = "The transaction already exists in queue of private transactions."]
-		PrivateTransactionAlreadyImported {
-			description("The transaction already exists in queue of private transactions."),
-			display("The transaction already exists in queue of private transactions."),
-		}
+			#[doc = "Queue of private transactions for verification is full."]
+			QueueIsFull {
+				description("Queue of private transactions for verification is full."),
+				display("Queue of private transactions for verification is full"),
+			}
 
-		#[doc = "The information about private transaction is not found in the store."]
-		PrivateTransactionNotFound {
-			description("The information about private transaction is not found in the store."),
-			display("The information about private transaction is not found in the store."),
-		}
+			#[doc = "The transaction already exists in queue of private transactions."]
+			PrivateTransactionAlreadyImported {
+				description("The transaction already exists in queue of private transactions."),
+				display("The transaction already exists in queue of private transactions."),
+			}
 
-		#[doc = "Account for signing public transactions not set."]
-		SignerAccountNotSet {
-			description("Account for signing public transactions not set."),
-			display("Account for signing public transactions not set."),
-		}
+			#[doc = "The information about private transaction is not found in the store."]
+			PrivateTransactionNotFound {
+				description("The information about private transaction is not found in the store."),
+				display("The information about private transaction is not found in the store."),
+			}
 
-		#[doc = "Account for validating private transactions not set."]
-		ValidatorAccountNotSet {
-			description("Account for validating private transactions not set."),
-			display("Account for validating private transactions not set."),
-		}
+			#[doc = "Account for signing public transactions not set."]
+			SignerAccountNotSet {
+				description("Account for signing public transactions not set."),
+				display("Account for signing public transactions not set."),
+			}
 
-		#[doc = "Account for signing requests to key server not set."]
-		KeyServerAccountNotSet {
-			description("Account for signing requests to key server not set."),
-			display("Account for signing requests to key server not set."),
-		}
+			#[doc = "Account for validating private transactions not set."]
+			ValidatorAccountNotSet {
+				description("Account for validating private transactions not set."),
+				display("Account for validating private transactions not set."),
+			}
 
-		#[doc = "Encryption key is not found on key server."]
-		EncryptionKeyNotFound(address: Address) {
-			description("Encryption key is not found on key server"),
-			display("Encryption key is not found on key server for {}", address),
-		}
+			#[doc = "Account for signing requests to key server not set."]
+			KeyServerAccountNotSet {
+				description("Account for signing requests to key server not set."),
+				display("Account for signing requests to key server not set."),
+			}
 
-		#[doc = "Key server URL is not set."]
-		KeyServerNotSet {
-			description("Key server URL is not set."),
-			display("Key server URL is not set."),
-		}
+			#[doc = "Encryption key is not found on key server."]
+			EncryptionKeyNotFound(address: Address) {
+				description("Encryption key is not found on key server"),
+				display("Encryption key is not found on key server for {}", address),
+			}
 
-		#[doc = "VM execution error."]
-		Execution(err: ExecutionError) {
-			description("VM execution error."),
-			display("VM execution error {}", err),
-		}
+			#[doc = "Key server URL is not set."]
+			KeyServerNotSet {
+				description("Key server URL is not set."),
+				display("Key server URL is not set."),
+			}
 
-		#[doc = "General signing error."]
-		Key(err: KeyError) {
-			description("General signing error."),
-			display("General signing error {}", err),
-		}
+			#[doc = "VM execution error."]
+			Execution(err: ExecutionError) {
+				description("VM execution error."),
+				display("VM execution error {}", err),
+			}
 
-		#[doc = "Account provider signing error."]
-		Sign(err: SignError) {
-			description("Account provider signing error."),
-			display("Account provider signing error {}", err),
-		}
+			#[doc = "General signing error."]
+			Key(err: KeyError) {
+				description("General signing error."),
+				display("General signing error {}", err),
+			}
 
-		#[doc = "Error of transactions processing."]
-		Transaction(err: TransactionError) {
-			description("Error of transactions processing."),
-			display("Error of transactions processing {}", err),
-		}
+			#[doc = "Account provider signing error."]
+			Sign(err: SignError) {
+				description("Account provider signing error."),
+				display("Account provider signing error {}", err),
+			}
 
-		#[doc = "General ethcore error."]
-		Ethcore(err: EthcoreError) {
-			description("General ethcore error."),
-			display("General ethcore error {}", err),
+			#[doc = "Error of transactions processing."]
+			Transaction(err: TransactionError) {
+				description("Error of transactions processing."),
+				display("Error of transactions processing {}", err),
+			}
+
+			#[doc = "General ethcore error."]
+			Ethcore(err: EthcoreError) {
+				description("General ethcore error."),
+				display("General ethcore error {}", err),
+			}
 		}
 	}
 }
+pub use self::internal::*;
 
 impl From<SignError> for Error {
 	fn from(err: SignError) -> Self {
