@@ -64,7 +64,7 @@ impl RollingFinality {
 				let current_signed = self.sign_count.len();
 
 				let new_signers = signers.iter().filter(|s| !self.sign_count.contains_key(s)).count();
-				let would_be_finalized = (current_signed + new_signers) * 2 > self.signers.len();
+				let would_be_finalized = (current_signed + new_signers) * 3 > self.signers.len() * 2;
 
 				if would_be_finalized {
 					trace!(target: "finality", "Encountered already finalized block {}", hash);
@@ -120,7 +120,7 @@ impl RollingFinality {
 
 		let mut newly_finalized = Vec::new();
 
-		while self.sign_count.len() * 2 > self.signers.len() {
+		while self.sign_count.len() * 3 > self.signers.len() * 2 {
 			let (hash, signers) = self.headers.pop_front()
 				.expect("headers length always greater than sign count length; qed");
 
@@ -162,26 +162,26 @@ mod tests {
 
 	#[test]
 	fn finalize_multiple() {
-		let signers: Vec<_> = (0..6).map(|_| Address::random()).collect();
+		let signers: Vec<_> = (0..7).map(|_| Address::random()).collect();
 
 		let mut finality = RollingFinality::blank(signers.clone());
-		let hashes: Vec<_> = (0..7).map(|_| H256::random()).collect();
+		let hashes: Vec<_> = (0..9).map(|_| H256::random()).collect();
 
-		// 3 / 6 signers is < 51% so no finality.
-		for (i, hash) in hashes.iter().take(6).cloned().enumerate() {
-			let i = i % 3;
+		// 4 / 7 signers is < 67% so no finality.
+		for (i, hash) in hashes.iter().take(8).cloned().enumerate() {
+			let i = i % 4;
 			assert!(finality.push_hash(hash, vec![signers[i]]).unwrap().len() == 0);
 		}
 
-		// after pushing a block signed by a fourth validator, the first four
+		// after pushing a block signed by a fifth validator, the first five
 		// blocks of the unverified chain become verified.
-		assert_eq!(finality.push_hash(hashes[6], vec![signers[4]]).unwrap(),
-			vec![hashes[0], hashes[1], hashes[2], hashes[3]]);
+		assert_eq!(finality.push_hash(hashes[8], vec![signers[4]]).unwrap(),
+			vec![hashes[0], hashes[1], hashes[2], hashes[3], hashes[4]]);
 	}
 
 	#[test]
 	fn finalize_multiple_signers() {
-		let signers: Vec<_> = (0..6).map(|_| Address::random()).collect();
+		let signers: Vec<_> = (0..5).map(|_| Address::random()).collect();
 		let mut finality = RollingFinality::blank(signers.clone());
 		let hash = H256::random();
 
@@ -194,10 +194,11 @@ mod tests {
 		let signers: Vec<_> = (0..6).map(|_| Address::random()).collect();
 		let hashes: Vec<_> = (0..12).map(|i| (H256::random(), vec![signers[i % 6]])).collect();
 
-		let mut finality = RollingFinality::blank(signers.clone());
+		let mut finality = RollingFinality::blank(signers);
 		finality.build_ancestry_subchain(hashes.iter().rev().cloned()).unwrap();
 
-		assert_eq!(finality.unfinalized_hashes().count(), 3);
+		// The last four hashes, with index 11, 10, 9, and 8, have been pushed. 7 would have finalized a block.
+		assert_eq!(finality.unfinalized_hashes().count(), 4);
 		assert_eq!(finality.subchain_head(), Some(hashes[11].0));
 	}
 
@@ -205,13 +206,14 @@ mod tests {
 	fn from_ancestry_multiple_signers() {
 		let signers: Vec<_> = (0..6).map(|_| Address::random()).collect();
 		let hashes: Vec<_> = (0..12).map(|i| {
-			(H256::random(), vec![signers[i % 6], signers[(i + 1) % 6], signers[(i + 2) % 6]])
+			let hash_signers = signers.iter().cycle().skip(i).take(4).cloned().collect();
+			(H256::random(), hash_signers)
 		}).collect();
 
 		let mut finality = RollingFinality::blank(signers.clone());
 		finality.build_ancestry_subchain(hashes.iter().rev().cloned()).unwrap();
 
-		// only the last hash has < 51% of authorities' signatures
+		// only the last hash has < 67% of authorities' signatures
 		assert_eq!(finality.unfinalized_hashes().count(), 1);
 		assert_eq!(finality.unfinalized_hashes().next(), Some(&hashes[11].0));
 		assert_eq!(finality.subchain_head(), Some(hashes[11].0));
