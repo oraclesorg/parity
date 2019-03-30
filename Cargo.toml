@@ -125,7 +125,7 @@ members = [
 	"chainspec",
 	"ethcore/wasm/run",
 	"ethcore/types",
-	"ethcore/hbbft",
+	"ethcore/hbbft_engine",
 	"ethkey/cli",
 	"ethstore/cli",
 	"evmbin",
