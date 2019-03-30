@@ -501,7 +501,7 @@ impl Engine<EthereumMachine> for Tendermint {
 		}
 	}
 
-	fn handle_message(&self, rlp: &[u8]) -> Result<(), EngineError> {
+	fn handle_message(&self, rlp: &[u8], _peer_id: usize) -> Result<(), EngineError> {
 		fn fmt_err<T: ::std::fmt::Debug>(x: T) -> EngineError {
 			EngineError::MalformedMessage(format!("{:?}", x))
 		}
@@ -824,7 +824,7 @@ mod tests {
 	fn vote<F>(engine: &EthEngine, signer: F, height: usize, view: usize, step: Step, block_hash: Option<H256>) -> Bytes where F: FnOnce(H256) -> Result<H520, ::account_provider::SignError> {
 		let mi = message_info_rlp(&VoteStep::new(height, view, step), block_hash);
 		let m = message_full_rlp(&signer(keccak(&mi)).unwrap().into(), &mi);
-		engine.handle_message(&m).unwrap();
+		engine.handle_message(&m, 0).unwrap();
 		m
 	}
 
