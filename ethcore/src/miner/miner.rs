@@ -442,7 +442,7 @@ impl Miner {
 					};
 
 					// Before adding from the queue to the new block, give the engine a chance to add transactions.
-					engine_pending = match self.engine.on_prepare_block(&open_block.block) {
+					engine_pending = match self.engine.on_prepare_block(&open_block) {
 						Ok(transactions) => transactions,
 						Err(err) => {
 							error!(target: "miner", "Failed to prepare engine transactions for new block: {:?}. \
@@ -890,6 +890,14 @@ impl miner::MinerService for Miner {
 			} else {
 				warn!("Setting an EngineSigner while Engine does not require one.");
 			}
+		}
+	}
+
+	fn clear_author(&self) {
+		self.params.write().author = Default::default();
+		if self.engine.seals_internally().is_some() {
+			self.sealing.lock().enabled = false;
+			self.engine.clear_signer();
 		}
 	}
 
