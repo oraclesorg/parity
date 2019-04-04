@@ -79,6 +79,7 @@ extern crate ethkey;
 
 extern crate hashdb;
 extern crate itertools;
+extern crate inventory;
 extern crate kvdb;
 extern crate kvdb_memorydb;
 extern crate kvdb_rocksdb;
@@ -103,6 +104,7 @@ extern crate unexpected;
 extern crate parity_snappy as snappy;
 extern crate ethabi;
 extern crate rustc_hex;
+extern crate serde_json;
 extern crate stats;
 extern crate stop_guard;
 extern crate using_queue;

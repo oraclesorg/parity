@@ -16,35 +16,40 @@
 
 //! Engine deserialization.
 
+use serde_json::Value;
 use super::{Ethash, BasicAuthority, AuthorityRound, Tendermint, NullEngine, InstantSeal};
 
 /// Engine deserialization.
 #[derive(Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub enum Engine {
 	/// Null engine.
-	#[serde(rename="null")]
 	Null(NullEngine),
 	/// Instantly sealing engine.
-	#[serde(rename="instantSeal")]
 	InstantSeal(Option<InstantSeal>),
 	/// Ethash engine.
 	#[serde(rename = "Ethash")]
 	Ethash(Ethash),
 	/// BasicAuthority engine.
-	#[serde(rename="basicAuthority")]
 	BasicAuthority(BasicAuthority),
 	/// AuthorityRound engine.
-	#[serde(rename="authorityRound")]
 	AuthorityRound(AuthorityRound),
 	/// Tendermint engine.
-	#[serde(rename="tendermint")]
-	Tendermint(Tendermint)
+	Tendermint(Tendermint),
+	/// External engine. This needs to be registered under the specified name, and parse its JSON config.
+	External {
+		/// The engine name.
+		name: String,
+		/// The engine configuration, in JSON format.
+		params: Value,
+	}
 }
 
 #[cfg(test)]
 mod tests {
-	use serde_json;
+	use std::iter;
+
+	use serde_json::{self, Value};
 	use spec::Engine;
 
 	#[test]
@@ -150,6 +155,24 @@ mod tests {
 		let deserialized: Engine = serde_json::from_str(s).unwrap();
 		match deserialized {
 			Engine::Tendermint(_) => {}, // Tendermint is unit tested in its own file.
+			_ => panic!(),
+		};
+
+		let s = r#"{
+			"external": {
+				"name": "myEngine",
+				"params": {
+					"my_param": 42
+				}
+			}
+		}"#;
+		let deserialized: Engine = serde_json::from_str(s).unwrap();
+		match deserialized {
+			Engine::External { name, params } => {
+				assert_eq!("myEngine", &name);
+				let json = Value::Object(iter::once(("my_param".to_string(), 42.into())).collect());
+				assert_eq!(json, params);
+			},
 			_ => panic!(),
 		};
 	}
