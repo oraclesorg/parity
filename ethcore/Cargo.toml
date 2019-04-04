@@ -37,6 +37,7 @@ ethkey = { path = "../ethkey" }
 ethstore = { path = "../ethstore" }
 evm = { path = "evm" }
 heapsize = "0.4"
+inventory = "0.1"
 itertools = "0.5"
 lazy_static = "1.0"
 log = "0.4"
@@ -56,6 +57,7 @@ parity-snappy = "0.1"
 stop-guard = { path = "../util/stop-guard" }
 macros = { path = "../util/macros" }
 rustc-hex = "1.0"
+serde_json = "1.0"
 stats = { path = "../util/stats" }
 trace-time = "0.1"
 using_queue = { path = "../util/using_queue" }
