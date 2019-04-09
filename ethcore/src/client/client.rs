@@ -1013,7 +1013,8 @@ impl Client {
 		self.state_db.read()
 	}
 
-	#[cfg(test)]
+	/// Get the blockchain implementation used by this miner.
+	#[cfg(any(test, feature = "test-helpers"))]
 	pub fn chain(&self) -> Arc<BlockChain> {
 		self.chain.read().clone()
 	}
