@@ -64,6 +64,11 @@ impl TransactionFilter {
 		)
 	}
 
+	/// Get a reference to the contract address.
+	pub fn contract_address(&self) -> &Address {
+		&self.contract_address
+	}
+
 	/// Check if transaction is allowed at given block.
 	pub fn transaction_allowed<C: BlockInfo + CallContract>(&self, parent_hash: &H256, block_number: BlockNumber, transaction: &SignedTransaction, client: &C) -> bool {
 		if block_number < self.transition_block { return true; }

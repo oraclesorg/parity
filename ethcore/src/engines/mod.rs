@@ -495,6 +495,12 @@ pub trait Engine<M: Machine>: Sync + Send {
 	fn executive_author(&self, header: &Header) -> Result<Address, Error> {
 		Ok(*header.author())
 	}
+
+	/// Overrides the block gas limit. Whenever this returns `Some` for a header, the next block's gas limit must be
+	/// exactly that value.
+	fn gas_limit_override(&self, parent: &Header) -> Option<U256> {
+		None
+	}
 }
 
 /// Check whether a given block is the best block based on the default total difficulty rule.
