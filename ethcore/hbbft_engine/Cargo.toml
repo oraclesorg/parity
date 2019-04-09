@@ -25,3 +25,7 @@ ethkey = { path = "../../ethkey" }
 
 [dev-dependencies]
 ethcore = { path = "..", features = ["test-helpers"] }
+
+[features]
+# Include tools to facilitate test setup.
+test-helpers = ["ethcore/test-helpers"]
