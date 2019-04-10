@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 use hash::Address;
 use uint::Uint;
 use bytes::Bytes;
-use super::ValidatorSet;
+use super::{StepDuration, ValidatorSet};
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -35,7 +35,7 @@ pub enum ConsensusKind {
 #[serde(rename_all = "camelCase")]
 pub struct AuthorityRoundParams {
 	/// Block duration, in seconds.
-	pub step_duration: Uint,
+	pub step_duration: StepDuration,
 	/// Valid authorities
 	pub validators: ValidatorSet,
 	/// Starting step. Determined automatically if not specified.
@@ -98,6 +98,7 @@ mod tests {
 	use hash::Address;
 	use spec::validator_set::ValidatorSet;
 	use spec::authority_round::AuthorityRound;
+	use spec::step_duration::StepDuration;
 
 	#[test]
 	fn authority_round_deserialization() {
@@ -116,12 +117,11 @@ mod tests {
 		}"#;
 
 		let deserialized: AuthorityRound = serde_json::from_str(s).unwrap();
-		assert_eq!(deserialized.params.step_duration, Uint(U256::from(0x02)));
+		assert_eq!(deserialized.params.step_duration, StepDuration::Single(Uint(U256::from(2))));
 		assert_eq!(deserialized.params.validators, ValidatorSet::List(vec![Address(H160::from("0xc6d9d2cd449a754c494264e1809c50e34d64562b"))]));
 		assert_eq!(deserialized.params.start_step, Some(Uint(U256::from(24))));
 		assert_eq!(deserialized.params.immediate_transitions, None);
 		assert_eq!(deserialized.params.maximum_uncle_count_transition, Some(Uint(10_000_000.into())));
 		assert_eq!(deserialized.params.maximum_uncle_count, Some(Uint(5.into())));
-
 	}
 }
