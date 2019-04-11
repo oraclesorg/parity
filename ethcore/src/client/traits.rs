@@ -469,6 +469,9 @@ pub trait EngineClient: Sync + Send + ChainInfo {
 
 	/// Get raw block header data by block id.
 	fn block_header(&self, id: BlockId) -> Option<encoded::Header>;
+
+	/// Get up to n currently pending transactions
+	fn queued_transactions(&self) -> Vec<Arc<VerifiedTransaction>>;
 }
 
 /// Extended client interface for providing proofs of the state.
