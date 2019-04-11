@@ -996,7 +996,7 @@ impl Client {
 	}
 
 	/// Get shared miner reference.
-	#[cfg(test)]
+	#[cfg(any(test, feature = "test-helpers"))]
 	pub fn miner(&self) -> Arc<Miner> {
 		self.importer.miner.clone()
 	}
