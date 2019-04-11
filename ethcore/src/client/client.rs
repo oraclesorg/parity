@@ -2433,6 +2433,10 @@ impl super::traits::EngineClient for Client {
 	fn block_header(&self, id: BlockId) -> Option<::encoded::Header> {
 		BlockChainClient::block_header(self, id)
 	}
+
+	fn queued_transactions(&self) -> Vec<Arc<VerifiedTransaction>> {
+		self.importer.miner.queued_transactions()
+	}
 }
 
 impl ProvingBlockChainClient for Client {
