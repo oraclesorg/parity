@@ -135,7 +135,7 @@ members = [
 	"accounts/ethstore/cli",
 	"chainspec",
 	"ethcore/wasm/run",
-	"ethcore/hbbft",
+	"ethcore/hbbft_engine",
 	"evmbin",
 	"parity-clib",
 	"whisper/cli",
