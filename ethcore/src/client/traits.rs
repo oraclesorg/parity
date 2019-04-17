@@ -472,6 +472,9 @@ pub trait EngineClient: Sync + Send + ChainInfo {
 
 	/// Get currently pending transactions
 	fn queued_transactions(&self) -> Vec<Arc<VerifiedTransaction>>;
+
+	/// Create block and queue it for sealing. Will return None if a block is already pending.
+ 	fn create_pending_block(&self, txns: Vec<Arc<VerifiedTransaction>>, timestamp: u64) -> Option<ClosedBlock>;
 }
 
 /// Extended client interface for providing proofs of the state.
