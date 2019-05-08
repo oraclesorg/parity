@@ -38,7 +38,7 @@
 ///
 /// 1. Set a signer using `Engine::set_signer()`. If a miner account was set up through
 ///    a config file or CLI flag `MinerService::set_author()` will eventually set the signer
-/// 2. We check that the engine seals internally through `Clique::seals_internally()`
+/// 2. We check that the engine seals internally
 ///    Note: This is always true for Clique
 /// 3. Calling `Clique::new()` will spawn a `StepService` thread. This thread will call `Engine::step()`
 ///    periodically. Internally, the Clique `step()` function calls `Client::update_sealing()`, which is
@@ -444,11 +444,6 @@ impl Engine<EthereumMachine> for Clique {
 		trace!(target: "engine", "on_seal_block: finished, final header: {:?}", header);
 
 		Ok(())
-	}
-
-	/// Clique doesn't require external work to seal, so we always return true here.
-	fn seals_internally(&self) -> Option<bool> {
-		Some(true)
 	}
 
 	/// Returns if we are ready to seal, the real sealing (signing extra_data) is actually done in `on_seal_block()`.
