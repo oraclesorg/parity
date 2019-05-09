@@ -1193,6 +1193,11 @@ impl Engine<EthereumMachine> for AuthorityRound {
 	/// Apply the block reward on finalisation of the block.
 	fn on_close_block(&self, block: &mut ExecutedBlock) -> Result<(), Error> {
 		let mut beneficiaries = Vec::new();
+
+		if block.header().number() == self.quorum_2_3_transition {
+			info!(target: "engine", "Block {}: Transitioning to 2/3 quorum.", self.quorum_2_3_transition);
+		}
+
 		if block.header().number() >= self.empty_steps_transition {
 			let empty_steps = if block.header().seal().is_empty() {
 				// this is a new block, calculate rewards based on the empty steps messages we have accumulated
