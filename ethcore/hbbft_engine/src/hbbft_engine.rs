@@ -7,17 +7,15 @@ use ethcore::engines::{
 };
 use ethcore::error::Error;
 use ethcore::machine::EthereumMachine;
-use ethereum_types::H256;
 use hbbft::honey_badger::{HoneyBadgerBuilder, Step};
 use hbbft::Target;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use rlp::{Decodable, Rlp};
 use serde_json;
-use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 use types::header::{ExtendedHeader, Header};
-use types::transaction::{SignedTransaction, UnverifiedTransaction};
+use types::transaction::SignedTransaction;
 
 type NodeId = usize;
 type HoneyBadger = hbbft::honey_badger::HoneyBadger<Contribution, NodeId>;
@@ -70,25 +68,15 @@ impl HoneyBadgerBFT {
 		};
 
 		// Decode and de-duplicate transactions
-		let mut imported: HashSet<H256> = Default::default();
 		let batch_txns: Vec<_> = batch
 			.contributions
 			.iter()
 			.flat_map(|(_, c)| &c.transactions)
 			.filter_map(|ser_txn| {
 				// TODO: Report proposers of malformed transactions.
-				match Decodable::decode(&Rlp::new(ser_txn)) {
-					Ok::<UnverifiedTransaction, _>(txn) => {
-						if imported.contains(&txn.hash()) {
-							None
-						} else {
-							imported.insert(txn.hash());
-							Some(txn)
-						}
-					}
-					_ => None,
-				}
+				Decodable::decode(&Rlp::new(ser_txn)).ok()
 			})
+			.unique()
 			.filter_map(|txn| {
 				// TODO: Report proposers of invalidly signed transactions.
 				SignedTransaction::new(txn).ok()
