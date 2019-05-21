@@ -340,7 +340,7 @@ impl ValidatorSet for ValidatorSafeContract {
 		Ok(returned_transactions)
 	}
 
-	fn on_close_block(&self, header: &Header, address: &Address) -> Result<(), Error> {
+	fn on_close_block(&self, header: &Header, our_address: &Address) -> Result<(), Error> {
 		let client = self.client.read().as_ref().and_then(Weak::upgrade).ok_or("No client!")?;
 		let client = client.as_full_client().ok_or("No full client!")?;
 
@@ -357,7 +357,7 @@ impl ValidatorSet for ValidatorSafeContract {
 				malicious_validator_address, block);
 			match client.call_contract(BlockId::Latest, self.contract_address, data)
 					.and_then(|result| decoder.decode(&result[..]).map_err(|e| e.to_string())) {
-				Ok(ref reporters) if reporters.contains(&address) => {
+				Ok(ref reporters) if reporters.contains(&our_address) => {
 					trace!(target: "engine", "Successfully removed report from report cache");
 					false
 				}
@@ -374,13 +374,14 @@ impl ValidatorSet for ValidatorSafeContract {
 			queue.truncate(MAX_QUEUED_REPORTS);
 		}
 
-		let mut nonce = client.latest_nonce(address);
+		let mut nonce = client.latest_nonce(our_address);
 		let mut resent_reports_in_block = self.resent_reports_in_block.lock();
 		if header.number() > *resent_reports_in_block {
 			*resent_reports_in_block = header.number();
 			debug!(target: "engine", "Checking for cached reports");
 			for (address, block, data) in &*queue {
-				debug!(target: "engine", "Trying to resend report");
+				debug!(target: "engine", "Retrying to report validator {} for misbehavior on block {} with nonce {}.",
+					   address, block, nonce);
 				while match self.transact(data.clone(), nonce) {
 					Ok(()) => false,
 					Err(Error(ErrorKind::Transaction(transaction::Error::Old), _)) => true,
@@ -390,6 +391,7 @@ impl ValidatorSet for ValidatorSafeContract {
 						false
 					}
 				} {
+					warn!(target: "engine", "Nonce {} already used. Incrementing.", nonce);
 					nonce += U256::from(1);
 				}
 				nonce += U256::from(1);
