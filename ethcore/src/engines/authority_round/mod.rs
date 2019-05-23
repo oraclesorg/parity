@@ -1771,6 +1771,8 @@ mod tests {
 			strict_empty_steps_transition: 0,
 			quorum_2_3_transition: 0,
 			randomness_contract_address: None,
+			report_malicious: BTreeMap::new(),
+			faulty_blocks_transition: BTreeMap::new(),
 		};
 
 		// mutate aura params
