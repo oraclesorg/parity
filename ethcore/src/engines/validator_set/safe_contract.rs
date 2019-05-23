@@ -356,9 +356,11 @@ impl ValidatorSet for ValidatorSafeContract {
 				return false; // Report is too old and cannot be used
 			}
 			let (data, decoder) = validator_set::functions::malice_reported_for_block::call(
-				malicious_validator_address, block);
+				malicious_validator_address, block
+			);
 			match client.call_contract(BlockId::Latest, self.contract_address, data)
-					.and_then(|result| decoder.decode(&result[..]).map_err(|e| e.to_string())) {
+				.and_then(|result| decoder.decode(&result[..]).map_err(|e| e.to_string()))
+			{
 				Ok(ref reporters) if reporters.contains(&our_address) => {
 					trace!(target: "engine", "Successfully removed report from report cache");
 					false
@@ -376,11 +378,12 @@ impl ValidatorSet for ValidatorSafeContract {
 			queue.truncate(MAX_QUEUED_REPORTS);
 		}
 
-		let mut nonce = client.latest_nonce(our_address);
 		let mut resent_reports_in_block = self.resent_reports_in_block.lock();
-		if header.number() > *resent_reports_in_block {
+		// Skip at least one block after sending malicious reports last time.
+		if header.number() > *resent_reports_in_block + 1 {
 			*resent_reports_in_block = header.number();
 			debug!(target: "engine", "Checking for cached reports");
+			let mut nonce = client.latest_nonce(our_address);
 			for (address, block, data) in &*queue {
 				debug!(target: "engine", "Retrying to report validator {} for misbehavior on block {} with nonce {}.",
 					   address, block, nonce);
