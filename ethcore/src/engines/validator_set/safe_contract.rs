@@ -44,6 +44,8 @@ use_contract!(validator_set, "res/contracts/validator_set_aura.json");
 
 /// The maximum number of reports to keep queued.
 const MAX_QUEUED_REPORTS: usize = 10;
+/// The maximum number of returned malice reports to resend.
+const MAX_RETURNED_REPORTS: usize = 10;
 
 const MEMOIZE_CAPACITY: usize = 500;
 
@@ -334,7 +336,7 @@ impl ValidatorSet for ValidatorSafeContract {
 			vec![(self.contract_address, data)]
 		};
 		let queued_reports = self.queued_reports.lock();
-		for (_address, _block, data) in queued_reports.iter().take(10) {
+		for (_address, _block, data) in queued_reports.iter().take(MAX_RETURNED_REPORTS) {
 			returned_transactions.push((self.contract_address, data.clone()))
 		}
 		Ok(returned_transactions)
