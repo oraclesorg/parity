@@ -24,6 +24,7 @@ use ethereum_types::{H256, Address};
 use machine::{AuxiliaryData, Call, EthereumMachine};
 use parking_lot::RwLock;
 use types::BlockNumber;
+use types::ids::BlockId;
 use types::header::Header;
 use types::transaction::{self, Action};
 
@@ -59,6 +60,20 @@ impl ValidatorContract {
 			Ok(()) | Err(transaction::Error::AlreadyImported) => Ok(()),
 			Err(e) => Err(e)?,
 		}
+	}
+
+	fn do_report_malicious(&self, address: &Address, block: BlockNumber, proof: Bytes) -> Result<(), ::error::Error> {
+		let client = self.client.read().as_ref().and_then(Weak::upgrade).ok_or("No client!")?;
+		let latest = client.block_header(BlockId::Latest).ok_or("No latest block!")?;
+		if !self.contains(&latest.parent_hash(), address) {
+			warn!(target: "engine", "Not reporting {} on block {}: Not a validator", address, block);
+			return Ok(());
+		}
+		let data = validator_report::functions::report_malicious::encode_input(*address, block, proof);
+		self.validators.queue_report((*address, block, data.clone()));
+		self.transact(data)?;
+		warn!(target: "engine", "Reported malicious validator {} at block {}", address, block);
+		Ok(())
 	}
 }
 
@@ -115,14 +130,9 @@ impl ValidatorSet for ValidatorContract {
 		self.validators.count_with_caller(bh, caller)
 	}
 
-	fn report_malicious(&self, address: &Address, set_block: BlockNumber, block: BlockNumber, proof: Bytes) {
-		let data = validator_report::functions::report_malicious::encode_input(*address, block, proof);
-		self.validators.queue_report((*address, block, data.clone()));
-		match self.transact(data) {
-			Ok(()) => warn!(target: "engine", "Reported malicious validator {} at block {}", address, block),
-			Err(s) => {
-				warn!(target: "engine", "Validator {} could not be reported ({}) on block {}", address, s, block);
-			}
+	fn report_malicious(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber, proof: Bytes) {
+		if let Err(s) = self.do_report_malicious(address, block, proof) {
+			warn!(target: "engine", "Validator {} could not be reported ({}) on block {}", address, s, block);
 		}
 	}
 

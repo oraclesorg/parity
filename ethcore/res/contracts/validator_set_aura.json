@@ -63,6 +63,25 @@
 		"type": "event"
 	},
 	{
+	  "constant": true,
+	  "inputs": [
+		{
+		  "name": "_miningAddress",
+		  "type": "address"
+		}
+	  ],
+	  "name": "isValidatorBanned",
+	  "outputs": [
+		{
+		  "name": "",
+		  "type": "bool"
+		}
+	  ],
+	  "payable": false,
+	  "stateMutability": "view",
+	  "type": "function"
+	},
+	{
 		"constant": true,
 		"inputs": [
 			{

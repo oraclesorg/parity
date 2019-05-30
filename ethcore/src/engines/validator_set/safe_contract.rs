@@ -27,6 +27,7 @@ use kvdb::DBValue;
 use memory_cache::MemoryLruCache;
 use parking_lot::{RwLock, Mutex};
 use rlp::{Rlp, RlpStream};
+use types::BlockNumber;
 use types::header::Header;
 use types::ids::BlockId;
 use types::log_entry::LogEntry;
@@ -84,9 +85,9 @@ pub struct ValidatorSafeContract {
 	contract_address: Address,
 	validators: RwLock<MemoryLruCache<H256, SimpleList>>,
 	client: RwLock<Option<Weak<EngineClient>>>, // TODO [keorn]: remove
-	queued_reports: Mutex<VecDeque<(Address, u64, Vec<u8>)>>,
+	queued_reports: Mutex<VecDeque<(Address, BlockNumber, Vec<u8>)>>,
 	/// The block number where we resent the queued reports last time.
-	resent_reports_in_block: Mutex<u64>,
+	resent_reports_in_block: Mutex<BlockNumber>,
 }
 
 // first proof is just a state proof call of `getValidators` at header's state.
@@ -104,7 +105,7 @@ fn encode_first_proof(header: &Header, state_items: &[Vec<u8>]) -> Bytes {
 fn check_first_proof(machine: &EthereumMachine, contract_address: Address, old_header: Header, state_items: &[DBValue])
 	-> Result<Vec<Address>, String>
 {
-	use types::transaction::{Action, Transaction};
+	use types::transaction::Transaction;
 
 	// TODO: match client contract_call_tx more cleanly without duplication.
 	const PROVIDED_GAS: u64 = 50_000_000;
@@ -212,7 +213,7 @@ impl ValidatorSafeContract {
 		}
 	}
 
-	pub(crate) fn queue_report(&self, data: (Address, u64, Vec<u8>)) {
+	pub(crate) fn queue_report(&self, data: (Address, BlockNumber, Vec<u8>)) {
 		self.queued_reports
 			.lock()
 			.push_back(data)
@@ -303,6 +304,55 @@ impl ValidatorSafeContract {
 			Some(matched_event) => Some(SimpleList::new(matched_event.new_set))
 		}
 	}
+
+	fn filter_report_queue(&self, our_address: &Address, latest_block: BlockNumber) -> Result<(), Error>{
+		let client = self.client.read().as_ref().and_then(Weak::upgrade).ok_or("No client!")?;
+		let client = client.as_full_client().ok_or("No full client!")?;
+
+		self.queued_reports.lock().retain(|&(malicious_validator_address, block, ref _data)| {
+			trace!(target: "engine", "Checking if report can be removed from cache");
+			if block > latest_block {
+				return false; // Report cannot be used, as it is for a block that isn’t in the current chain
+			}
+			if latest_block > 100 && latest_block - 100 > block {
+				return false; // Report is too old and cannot be used
+			}
+			// Check if the validator is already banned...
+			let (data, decoder) = validator_set::functions::is_validator_banned::call(malicious_validator_address);
+			match client.call_contract(BlockId::Latest, self.contract_address, data)
+				.and_then(|result| decoder.decode(&result[..]).map_err(|e| e.to_string()))
+			{
+				Ok(true) => {
+					trace!(target: "engine", "Successfully removed report from report cache");
+					return false;
+				}
+				Ok(false) => (),
+				Err(err) => {
+					warn!(target: "engine", "Failed to query ban status {:?}, dropping pending report.", err);
+					return false;
+				}
+			}
+			// ...or if our report has already been processed.
+			let (data, decoder) = validator_set::functions::malice_reported_for_block::call(
+				malicious_validator_address, block
+			);
+			match client.call_contract(BlockId::Latest, self.contract_address, data)
+				.and_then(|result| decoder.decode(&result[..]).map_err(|e| e.to_string()))
+			{
+				Ok(ref reporters) if reporters.contains(&our_address) => {
+					trace!(target: "engine", "Successfully removed report from report cache");
+					false
+				}
+				Ok(_) => true,
+				Err(err) => {
+					warn!(target: "engine", "Failed to query malice reports {:?}, dropping pending report.", err);
+					false
+				}
+			}
+		});
+
+		Ok(())
+	}
 }
 
 impl ValidatorSet for ValidatorSafeContract {
@@ -323,6 +373,7 @@ impl ValidatorSet for ValidatorSafeContract {
 	fn on_prepare_block(&self, _first: bool, header: &Header, caller: &mut SystemCall)
 		-> Result<Vec<(Address, Bytes)>, Error>
 	{
+		self.filter_report_queue(header.author(), header.number())?;
 		let (data, decoder) = validator_set::functions::emit_initiate_change_callable::call();
 		let mut returned_transactions = if !caller(self.contract_address, data)
 			.and_then(|x| decoder.decode(&x)
@@ -346,32 +397,10 @@ impl ValidatorSet for ValidatorSafeContract {
 		let client = self.client.read().as_ref().and_then(Weak::upgrade).ok_or("No client!")?;
 		let client = client.as_full_client().ok_or("No full client!")?;
 
+		let latest_block = header.number().max(client.block_number(BlockId::Latest).unwrap_or(0)) + 1;
+		self.filter_report_queue(our_address, latest_block)?;
+
 		let mut queue = self.queued_reports.lock();
-		queue.retain(|&(malicious_validator_address, block, ref _data)| {
-			trace!(target: "engine", "Checking if report can be removed from cache");
-			if block > header.number() {
-				return false; // Report cannot be used, as it is for a block that isn’t in the current chain
-			}
-			if header.number() > 100 && header.number() - 100 > block {
-				return false; // Report is too old and cannot be used
-			}
-			let (data, decoder) = validator_set::functions::malice_reported_for_block::call(
-				malicious_validator_address, block
-			);
-			match client.call_contract(BlockId::Latest, self.contract_address, data)
-				.and_then(|result| decoder.decode(&result[..]).map_err(|e| e.to_string()))
-			{
-				Ok(ref reporters) if reporters.contains(&our_address) => {
-					trace!(target: "engine", "Successfully removed report from report cache");
-					false
-				}
-				Ok(_) => true,
-				Err(err) => {
-					warn!(target: "engine", "Failed to query malice reports {:?}, dropping pending report.", err);
-					false
-				}
-			}
-		});
 
 		if queue.len() > MAX_QUEUED_REPORTS {
 			warn!(target: "engine", "Removing report from report cache, even though it has not been finalized");
@@ -382,7 +411,6 @@ impl ValidatorSet for ValidatorSafeContract {
 		// Skip at least one block after sending malicious reports last time.
 		if header.number() > *resent_reports_in_block + 1 {
 			*resent_reports_in_block = header.number();
-			debug!(target: "engine", "Checking for cached reports");
 			let mut nonce = client.latest_nonce(our_address);
 			for (address, block, data) in &*queue {
 				debug!(target: "engine", "Retrying to report validator {} for misbehavior on block {} with nonce {}.",
@@ -460,7 +488,7 @@ impl ValidatorSet for ValidatorSafeContract {
 		}
 	}
 
-	fn epoch_set(&self, first: bool, machine: &EthereumMachine, _number: ::types::BlockNumber, proof: &[u8])
+	fn epoch_set(&self, first: bool, machine: &EthereumMachine, _number: BlockNumber, proof: &[u8])
 		-> Result<(SimpleList, Option<H256>), Error>
 	{
 		let rlp = Rlp::new(proof);
