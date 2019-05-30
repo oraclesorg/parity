@@ -59,6 +59,11 @@ contract TestList {
 		return block.number > 0;
 	}
 
+	// Checks if a validator has been removed.
+	function isValidatorBanned(address validator) view public returns (bool) {
+		return validators[indices[validator]] != validator;
+	}
+
 	// Emits an `InitiateChange` event.
 	function emitInitiateChange() public {
 		emit InitiateChange(blockhash(block.number - 1), validators);
