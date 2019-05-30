@@ -961,6 +961,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		header_expected_seal_fields(header, self.empty_steps_transition)
 	}
 
+	#[cfg(test)]
 	fn step(&self) {
 		self.step.inner.increment();
 		self.step.can_propose.store(true, AtomicOrdering::SeqCst);
@@ -1295,7 +1296,12 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			},
 		};
 
-		block_reward::apply_block_rewards(&rewards, block, &self.machine)
+		block_reward::apply_block_rewards(&rewards, block, &self.machine)?;
+
+		match self.signer.read().as_ref() {
+			Some(signer) => self.validators.on_close_block(block.header(), &signer.address()),
+			None => Ok(()), // We are not a validator, so we can't report malicious validators.
+		}
 	}
 
 	/// Make calls to the randomness and validator set contracts.
