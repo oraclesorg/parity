@@ -2776,6 +2776,7 @@ dependencies = [
  "fake-fetch 0.0.1",
  "fdlimit 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hbbft_engine 0.0.1",
  "ipnetwork 0.12.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "journaldb 0.2.0",
  "jsonrpc-core 10.0.1 (registry+https://github.com/rust-lang/crates.io-index)",

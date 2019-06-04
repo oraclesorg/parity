@@ -386,6 +386,9 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 	where Cr: Fn(String) + 'static + Send,
 		Rr: Fn() + 'static + Send
 {
+	// initialize consensus engine registry
+	hbbft_engine::init();
+
 	// load spec
 	let spec = cmd.spec.spec(&cmd.dirs.cache)?;
 

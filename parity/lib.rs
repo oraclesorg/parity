@@ -61,6 +61,7 @@ extern crate journaldb;
 extern crate keccak_hash as hash;
 extern crate kvdb;
 extern crate node_filter;
+extern crate hbbft_engine;
 extern crate parity_bytes as bytes;
 extern crate parity_hash_fetch as hash_fetch;
 extern crate parity_ipfs_api;
