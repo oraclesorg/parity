@@ -46,7 +46,6 @@ use rlp::{encode, Decodable, DecoderError, Encodable, RlpStream, Rlp};
 use ethereum_types::{H256, H520, Address, U128, U256};
 use parking_lot::{Mutex, RwLock};
 use time_utils::CheckedSystemTime;
-use tx_filter::transact_acl_gas_price;
 use types::BlockNumber;
 use types::ancestry_action::AncestryAction;
 use types::header::{Header, ExtendedHeader};
@@ -1420,9 +1419,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			trace!(target: "engine", "Skipping calls to POSDAO randomness and validator set contracts");
 			return Ok(Vec::new());
 		}
-		// Genesis is never a new block, but might as well check.
-		let header = block.header.clone();
-		let first = header.number() == 0;
+
 		let opt_signer = self.signer.read();
 		let signer = match opt_signer.as_ref() {
 			Some(signer) => signer,
@@ -1434,7 +1431,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			EngineError::RequiresClient
 		})?;
 		let full_client = client.as_full_client()
-			.ok_or(EngineError::FailedSystemCall("Failed to upgrade to BlockchainClient.".to_string()))?;
+			.ok_or_else(|| EngineError::FailedSystemCall("Failed to upgrade to BlockchainClient.".to_string()))?;
 
 		// Makes a constant contract call.
 		let mut call = |to: Address, data: Bytes| {
@@ -1465,7 +1462,9 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			}
 		}
 
-		for (addr, data) in self.validators.on_prepare_block(first, &header, &mut call)? {
+		// Genesis is never a new block, but might as well check.
+		let first = block.header.number() == 0;
+		for (addr, data) in self.validators.on_prepare_block(first, &block.header, &mut call)? {
 			transactions.push(make_transaction(addr, data)?);
 		}
 
@@ -2161,7 +2160,6 @@ mod tests {
 	#[should_panic(expected="counter is too high")]
 	fn test_counter_increment_too_high() {
 		use super::Step;
-		use std::sync::atomic::AtomicU16;
 
 		let step = Step {
 			calibrate: false,
