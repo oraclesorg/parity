@@ -18,7 +18,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::{cmp, fmt};
-use std::iter::FromIterator;
+use std::iter::{self, FromIterator};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Weak, Arc};
@@ -79,10 +79,8 @@ pub struct AuthorityRoundParams {
 	pub immediate_transitions: bool,
 	/// Block reward in base units.
 	pub block_reward: U256,
-	/// Block reward contract transition block.
-	pub block_reward_contract_transition: u64,
-	/// Block reward contract.
-	pub block_reward_contract: Option<BlockRewardContract>,
+	/// Block reward contract addresses with their associated starting block numbers.
+	pub block_reward_contract: BTreeMap<u64, BlockRewardContract>,
 	/// Number of accepted uncles transition block.
 	pub maximum_uncle_count_transition: u64,
 	/// Number of accepted uncles.
@@ -116,11 +114,15 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			validate_step_transition: p.validate_step_transition.map_or(0, Into::into),
 			immediate_transitions: p.immediate_transitions.unwrap_or(false),
 			block_reward: p.block_reward.map_or_else(Default::default, Into::into),
-			block_reward_contract_transition: p.block_reward_contract_transition.map_or(0, Into::into),
-			block_reward_contract: match (p.block_reward_contract_code, p.block_reward_contract_address) {
-				(Some(code), _) => Some(BlockRewardContract::new_from_code(Arc::new(code.into()))),
-				(_, Some(address)) => Some(BlockRewardContract::new_from_address(address.into())),
-				(None, None) => None,
+			block_reward_contract:
+			if let Some(code) = p.block_reward_contract_code {
+				iter::once((0, BlockRewardContract::new_from_code(Arc::new(code.into())))).collect()
+			} else {
+				p.block_reward_contract
+					.into_iter()
+					.map(|(block_num, address)|
+						 (block_num.into(), BlockRewardContract::new_from_address(address.into()))
+					).collect()
 			},
 			maximum_uncle_count_transition: p.maximum_uncle_count_transition.map_or(0, Into::into),
 			maximum_uncle_count: p.maximum_uncle_count.map_or(0, Into::into),
@@ -442,8 +444,7 @@ pub struct AuthorityRound {
 	epoch_manager: Mutex<EpochManager>,
 	immediate_transitions: bool,
 	block_reward: U256,
-	block_reward_contract_transition: u64,
-	block_reward_contract: Option<BlockRewardContract>,
+	block_reward_contract: BTreeMap<u64, BlockRewardContract>,
 	maximum_uncle_count_transition: u64,
 	maximum_uncle_count: usize,
 	empty_steps_transition: u64,
@@ -710,7 +711,6 @@ impl AuthorityRound {
 				epoch_manager: Mutex::new(EpochManager::blank(our_params.quorum_2_3_transition)),
 				immediate_transitions: our_params.immediate_transitions,
 				block_reward: our_params.block_reward,
-				block_reward_contract_transition: our_params.block_reward_contract_transition,
 				block_reward_contract: our_params.block_reward_contract,
 				maximum_uncle_count_transition: our_params.maximum_uncle_count_transition,
 				maximum_uncle_count: our_params.maximum_uncle_count,
@@ -1278,16 +1278,21 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		let author = *block.header().author();
 		beneficiaries.push((author, RewardKind::Author));
 
-		let rewards: Vec<_> = match self.block_reward_contract {
-			Some(ref c) if block.header().number() >= self.block_reward_contract_transition => {
-				let mut call = super::default_system_or_code_call(&self.machine, block);
-
-				let rewards = c.reward(&beneficiaries, &mut call)?;
-				rewards.into_iter().map(|(author, amount)| (author, RewardKind::External, amount)).collect()
-			},
-			_ => {
-				beneficiaries.into_iter().map(|(author, reward_kind)| (author, reward_kind, self.block_reward)).collect()
-			},
+		let block_reward_contract_block_num = self
+			.block_reward_contract
+			.keys()
+			.filter(|&&n| n <= block.header().number())
+			.max();
+		let rewards: Vec<_> = if let Some(n) = block_reward_contract_block_num {
+			let mut call = super::default_system_or_code_call(&self.machine, block);
+			let rewards = self
+				.block_reward_contract
+				.get(n)
+				.expect("block number of reward contract; qed")
+				.reward(&beneficiaries, &mut call)?;
+			rewards.into_iter().map(|(author, amount)| (author, RewardKind::External, amount)).collect()
+		} else {
+			beneficiaries.into_iter().map(|(author, reward_kind)| (author, reward_kind, self.block_reward)).collect()
 		};
 
 		block_reward::apply_block_rewards(&rewards, block, &self.machine)?;
@@ -1722,7 +1727,6 @@ mod tests {
 			empty_steps_transition: u64::max_value(),
 			maximum_empty_steps: 0,
 			block_reward: Default::default(),
-			block_reward_contract_transition: 0,
 			block_reward_contract: Default::default(),
 			strict_empty_steps_transition: 0,
 			quorum_2_3_transition: 0,
