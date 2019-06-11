@@ -36,7 +36,7 @@ use ethjson::{spec::StepDuration};
 use machine::{AuxiliaryData, Call, EthereumMachine};
 use hash::keccak;
 use super::signer::EngineSigner;
-use super::validator_set::{ValidatorSet, SimpleList, new_validator_set};
+use super::validator_set::{ValidatorSet, SimpleList, new_validator_set_posdao};
 use self::finality::RollingFinality;
 use ethkey::{self, Signature};
 use io::{IoContext, IoHandler, TimerToken, IoService};
@@ -95,6 +95,9 @@ pub struct AuthorityRoundParams {
 	pub strict_empty_steps_transition: u64,
 	/// If set, enables random number contract integration.
 	pub randomness_contract_address: Option<Address>,
+	/// If set, this is the block number at which the consensus engine switches from AuRa to AuRa
+	/// with POSDAO modifications.
+	pub posdao_transition: Option<BlockNumber>,
 }
 
 const U16_MAX: usize = ::std::u16::MAX as usize;
@@ -146,7 +149,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 
 		AuthorityRoundParams {
 			step_durations,
-			validators: new_validator_set(p.validators),
+			validators: new_validator_set_posdao(p.validators, p.posdao_transition.map(Into::into)),
 			start_step: p.start_step.map(Into::into),
 			validate_score_transition: p.validate_score_transition.map_or(0, Into::into),
 			validate_step_transition: p.validate_step_transition.map_or(0, Into::into),
@@ -160,6 +163,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			quorum_2_3_transition: p.quorum_2_3_transition.map_or_else(BlockNumber::max_value, Into::into),
 			strict_empty_steps_transition: p.strict_empty_steps_transition.map_or(0, Into::into),
 			randomness_contract_address: p.randomness_contract_address.map(Into::into),
+			posdao_transition: p.posdao_transition.map(Into::into),
 		}
 	}
 }
@@ -524,6 +528,9 @@ pub struct AuthorityRound {
 	machine: EthereumMachine,
 	/// If set, enables random number contract integration.
 	randomness_contract_address: Option<Address>,
+	/// The block number at which the consensus engine switches from AuRa to AuRa with POSDAO
+	/// modifications.
+	posdao_transition: Option<BlockNumber>,
 }
 
 // header-chain validator.
@@ -796,6 +803,7 @@ impl AuthorityRound {
 				strict_empty_steps_transition: our_params.strict_empty_steps_transition,
 				machine: machine,
 				randomness_contract_address: our_params.randomness_contract_address,
+				posdao_transition: our_params.posdao_transition,
 			});
 
 		// Do not initialize timeouts for tests.
@@ -1382,6 +1390,10 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 	/// Make calls to the randomness and validator set contracts.
 	fn on_prepare_block(&self, block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> {
+		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
+		if self.posdao_transition.map_or(true, |block_num| block.header().number() < block_num) {
+			return Ok(Vec::new());
+		}
 		// Genesis is never a new block, but might as well check.
 		let header = block.header.clone();
 		let first = header.number() == 0;
@@ -1807,6 +1819,7 @@ mod tests {
 			strict_empty_steps_transition: 0,
 			quorum_2_3_transition: 0,
 			randomness_contract_address: None,
+			posdao_transition: None,
 		};
 
 		// mutate aura params

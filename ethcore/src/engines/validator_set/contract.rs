@@ -46,7 +46,7 @@ impl ValidatorContract {
 	pub fn new(contract_address: Address) -> Self {
 		ValidatorContract {
 			contract_address,
-			validators: ValidatorSafeContract::new(contract_address),
+			validators: ValidatorSafeContract::new(contract_address, None),
 			client: RwLock::new(None),
 		}
 	}

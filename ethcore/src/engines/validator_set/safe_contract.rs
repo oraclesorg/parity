@@ -88,6 +88,9 @@ pub struct ValidatorSafeContract {
 	queued_reports: Mutex<VecDeque<(Address, BlockNumber, Vec<u8>)>>,
 	/// The block number where we resent the queued reports last time.
 	resent_reports_in_block: Mutex<BlockNumber>,
+	/// If set, this is the block number at which the consensus engine switches from AuRa to AuRa
+	/// with POSDAO modifications.
+	pub posdao_transition: Option<BlockNumber>,
 }
 
 // first proof is just a state proof call of `getValidators` at header's state.
@@ -219,13 +222,14 @@ impl ValidatorSafeContract {
 			.push_back(data)
 	}
 
-	pub fn new(contract_address: Address) -> Self {
+	pub fn new(contract_address: Address, posdao_transition: Option<BlockNumber>) -> Self {
 		ValidatorSafeContract {
 			contract_address,
 			validators: RwLock::new(MemoryLruCache::new(MEMOIZE_CAPACITY)),
 			client: RwLock::new(None),
 			queued_reports: Mutex::new(VecDeque::new()),
 			resent_reports_in_block: Mutex::new(0),
+			posdao_transition,
 		}
 	}
 
@@ -373,6 +377,10 @@ impl ValidatorSet for ValidatorSafeContract {
 	fn on_prepare_block(&self, _first: bool, header: &Header, caller: &mut SystemCall)
 		-> Result<Vec<(Address, Bytes)>, Error>
 	{
+		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
+		if self.posdao_transition.map_or(true, |block_num| header.number() < block_num) {
+			return Ok(Vec::new());
+		}
 		self.filter_report_queue(header.author(), header.number())?;
 		let (data, decoder) = validator_set::functions::emit_initiate_change_callable::call();
 		let mut returned_transactions = if !caller(self.contract_address, data)
@@ -394,6 +402,10 @@ impl ValidatorSet for ValidatorSafeContract {
 	}
 
 	fn on_close_block(&self, header: &Header, our_address: &Address) -> Result<(), Error> {
+		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
+		if self.posdao_transition.map_or(true, |block_num| header.number() < block_num) {
+			return Ok(());
+		}
 		let client = self.client.read().as_ref().and_then(Weak::upgrade).ok_or("No client!")?;
 		let client = client.as_full_client().ok_or("No full client!")?;
 
@@ -601,7 +613,10 @@ mod tests {
 	#[test]
 	fn fetches_validators() {
 		let client = generate_dummy_client_with_spec(Spec::new_validator_safe_contract);
-		let vc = Arc::new(ValidatorSafeContract::new("0000000000000000000000000000000000000005".parse::<Address>().unwrap()));
+		let vc = Arc::new(ValidatorSafeContract::new(
+			"0000000000000000000000000000000000000005".parse::<Address>().unwrap(),
+			None
+		));
 		vc.register_client(Arc::downgrade(&client) as _);
 		let last_hash = client.best_block_header().hash();
 		assert!(vc.contains(&last_hash, &"7d577a597b2742b498cb5cf0c26cdcd726d39e6e".parse::<Address>().unwrap()));
