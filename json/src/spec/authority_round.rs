@@ -80,6 +80,9 @@ pub struct AuthorityRoundParams {
 	/// Stake (PoS) consensus.  Otherwise, use Proof of Authority (PoA)
 	/// consensus.
 	pub randomness_contract_address: Option<Address>,
+	/// The block number at which the consensus engine switches from AuRa to AuRa with POSDAO
+	/// modifications.
+	pub posdao_transition: Option<Uint>,
 }
 
 /// Authority engine deserialization.

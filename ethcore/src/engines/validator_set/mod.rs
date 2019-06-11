@@ -43,16 +43,27 @@ use self::safe_contract::ValidatorSafeContract;
 use self::multi::Multi;
 use super::SystemCall;
 
-/// Creates a validator set from spec.
-pub fn new_validator_set(spec: ValidatorSpec) -> Box<ValidatorSet> {
+/// Creates a validator set from the given spec and initializes a transition to POSDAO AuRa consensus.
+pub fn new_validator_set_posdao(spec: ValidatorSpec, posdao_transition: Option<BlockNumber>) -> Box<ValidatorSet> {
 	match spec {
-		ValidatorSpec::List(list) => Box::new(SimpleList::new(list.into_iter().map(Into::into).collect())),
-		ValidatorSpec::SafeContract(address) => Box::new(ValidatorSafeContract::new(address.into())),
-		ValidatorSpec::Contract(address) => Box::new(ValidatorContract::new(address.into())),
-		ValidatorSpec::Multi(sequence) => Box::new(
-			Multi::new(sequence.into_iter().map(|(block, set)| (block.into(), new_validator_set(set))).collect())
-		),
+		ValidatorSpec::List(list) =>
+			Box::new(SimpleList::new(list.into_iter().map(Into::into).collect())),
+		ValidatorSpec::SafeContract(address) =>
+			Box::new(ValidatorSafeContract::new(address.into(), posdao_transition)),
+		ValidatorSpec::Contract(address) =>
+			Box::new(ValidatorContract::new(address.into())),
+		ValidatorSpec::Multi(sequence) => Box::new(Multi::new(
+			sequence
+				.into_iter()
+				.map(|(block, set)| (block.into(), new_validator_set(set)))
+				.collect()
+		)),
 	}
+}
+
+/// Creates a validator set from the given spec.
+pub fn new_validator_set(spec: ValidatorSpec) -> Box<ValidatorSet> {
+	new_validator_set_posdao(spec, None)
 }
 
 /// A validator set.
