@@ -18,7 +18,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::{cmp, fmt};
-use std::iter::{self, FromIterator};
+use std::iter::FromIterator;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Weak, Arc};
@@ -115,19 +115,18 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			validate_step_transition: p.validate_step_transition.map_or(0, Into::into),
 			immediate_transitions: p.immediate_transitions.unwrap_or(false),
 			block_reward: p.block_reward.map_or_else(Default::default, Into::into),
-			block_reward_contract_transitions:
-			if let Some(code) = p.block_reward_contract_code {
-				iter::once((transition_block_num,
-							BlockRewardContract::new_from_code(Arc::new(code.into()))))
-					.collect()
-			} else {
+			block_reward_contract_transitions: {
 				let mut transitions: BTreeMap<_, _> = p.block_reward_contract_transitions
 					.unwrap_or_default()
 					.into_iter()
 					.map(|(block_num, address)|
 						 (block_num.into(), BlockRewardContract::new_from_address(address.into()))
 					).collect();
-				if let Some(address) = p.block_reward_contract_address {
+				if let Some(code) = p.block_reward_contract_code {
+					transitions.insert(transition_block_num,
+									   BlockRewardContract::new_from_code(Arc::new(code.into())));
+				}
+				else if let Some(address) = p.block_reward_contract_address {
 					transitions.insert(transition_block_num,
 									   BlockRewardContract::new_from_address(address.into()));
 				}
