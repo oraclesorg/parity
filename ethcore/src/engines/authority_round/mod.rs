@@ -19,7 +19,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::{cmp, fmt};
 use std::iter::{self, FromIterator};
-use std::ops::Deref;
+use std::ops::{Bound::Included, Deref};
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Weak, Arc};
 use std::time::{UNIX_EPOCH, SystemTime, Duration};
@@ -106,6 +106,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			step_duration_usize = U16_MAX;
 			warn!(target: "engine", "step_duration is too high ({}), setting it to {}", step_duration_usize, U16_MAX);
 		}
+		let transition_block_num = p.block_reward_contract_transition.map_or(0, Into::into);
 		AuthorityRoundParams {
 			step_duration: step_duration_usize as u16,
 			validators: new_validator_set(p.validators),
@@ -116,7 +117,9 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			block_reward: p.block_reward.map_or_else(Default::default, Into::into),
 			block_reward_contract_transitions:
 			if let Some(code) = p.block_reward_contract_code {
-				iter::once((0, BlockRewardContract::new_from_code(Arc::new(code.into())))).collect()
+				iter::once((transition_block_num,
+							BlockRewardContract::new_from_code(Arc::new(code.into()))))
+					.collect()
 			} else {
 				let mut transitions: BTreeMap<_, _> = p.block_reward_contract_transitions
 					.unwrap_or_default()
@@ -124,7 +127,6 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 					.map(|(block_num, address)|
 						 (block_num.into(), BlockRewardContract::new_from_address(address.into()))
 					).collect();
-				let transition_block_num = p.block_reward_contract_transition.map_or(0, Into::into);
 				if let Some(address) = p.block_reward_contract_address {
 					transitions.insert(transition_block_num,
 									   BlockRewardContract::new_from_address(address.into()));
@@ -1285,18 +1287,13 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		let author = *block.header().author();
 		beneficiaries.push((author, RewardKind::Author));
 
-		let block_reward_contract_block_num = self
+		let block_reward_contract_transition = self
 			.block_reward_contract_transitions
-			.keys()
-			.filter(|&&n| n <= block.header().number())
-			.max();
-		let rewards: Vec<_> = if let Some(n) = block_reward_contract_block_num {
+			.range((Included(&0), Included(&block.header().number())))
+			.last();
+		let rewards: Vec<_> = if let Some((_, contract)) = block_reward_contract_transition {
 			let mut call = super::default_system_or_code_call(&self.machine, block);
-			let rewards = self
-				.block_reward_contract_transitions
-				.get(n)
-				.expect("block number of reward contract; qed")
-				.reward(&beneficiaries, &mut call)?;
+			let rewards = contract.reward(&beneficiaries, &mut call)?;
 			rewards.into_iter().map(|(author, amount)| (author, RewardKind::External, amount)).collect()
 		} else {
 			beneficiaries.into_iter().map(|(author, reward_kind)| (author, reward_kind, self.block_reward)).collect()
