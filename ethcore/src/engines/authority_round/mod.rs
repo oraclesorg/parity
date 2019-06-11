@@ -19,7 +19,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::{cmp, fmt};
 use std::iter::{self, FromIterator};
-use std::ops::{Bound::Included, Deref};
+use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Weak, Arc};
 use std::time::{UNIX_EPOCH, SystemTime, Duration};
@@ -1289,7 +1289,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 		let block_reward_contract_transition = self
 			.block_reward_contract_transitions
-			.range((Included(&0), Included(&block.header().number())))
+			.range(..=block.header().number())
 			.last();
 		let rewards: Vec<_> = if let Some((_, contract)) = block_reward_contract_transition {
 			let mut call = super::default_system_or_code_call(&self.machine, block);
