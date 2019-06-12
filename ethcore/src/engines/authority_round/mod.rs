@@ -107,22 +107,28 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			warn!(target: "engine", "step_duration is too high ({}), setting it to {}", step_duration_usize, U16_MAX);
 		}
 		let transition_block_num = p.block_reward_contract_transition.map_or(0, Into::into);
-		let mut transitions: BTreeMap<_, _> = p.block_reward_contract_transitions
+		let mut br_transitions: BTreeMap<_, _> = p.block_reward_contract_transitions
 			.unwrap_or_default()
 			.into_iter()
 			.map(|(block_num, address)|
 				 (block_num.into(), BlockRewardContract::new_from_address(address.into())))
 			.collect();
-		if transitions.keys().any(|&block_num| block_num < transition_block_num) {
+		if (p.block_reward_contract_code.is_some() || p.block_reward_contract_address.is_some()) &&
+			br_transitions.keys().any(|&block_num| block_num <= transition_block_num)
+		{
 			let s = "blockRewardContractTransition";
-			panic!("{} should not exceed any of the keys in {}s", s, s);
+			panic!("{} should be less than any of the keys in {}s", s, s);
 		}
 		if let Some(code) = p.block_reward_contract_code {
-			transitions.insert(transition_block_num,
-							   BlockRewardContract::new_from_code(Arc::new(code.into())));
+			br_transitions.insert(
+				transition_block_num,
+				BlockRewardContract::new_from_code(Arc::new(code.into()))
+			);
 		} else if let Some(address) = p.block_reward_contract_address {
-			transitions.insert(transition_block_num,
-							   BlockRewardContract::new_from_address(address.into()));
+			br_transitions.insert(
+				transition_block_num,
+				BlockRewardContract::new_from_address(address.into())
+			);
 		}
 		AuthorityRoundParams {
 			step_duration: step_duration_usize as u16,
@@ -132,7 +138,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			validate_step_transition: p.validate_step_transition.map_or(0, Into::into),
 			immediate_transitions: p.immediate_transitions.unwrap_or(false),
 			block_reward: p.block_reward.map_or_else(Default::default, Into::into),
-			block_reward_contract_transitions: transitions,
+			block_reward_contract_transitions: br_transitions,
 			maximum_uncle_count_transition: p.maximum_uncle_count_transition.map_or(0, Into::into),
 			maximum_uncle_count: p.maximum_uncle_count.map_or(0, Into::into),
 			empty_steps_transition: p.empty_steps_transition.map_or(u64::max_value(), |n| ::std::cmp::max(n.into(), 1)),
