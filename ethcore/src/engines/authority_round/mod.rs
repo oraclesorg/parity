@@ -114,7 +114,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 				 (block_num.into(), BlockRewardContract::new_from_address(address.into())))
 			.collect();
 		if (p.block_reward_contract_code.is_some() || p.block_reward_contract_address.is_some()) &&
-			br_transitions.keys().any(|&block_num| block_num <= transition_block_num)
+			br_transitions.keys().next().map_or(false, |&block_num| block_num <= transition_block_num)
 		{
 			let s = "blockRewardContractTransition";
 			panic!("{} should be less than any of the keys in {}s", s, s);
