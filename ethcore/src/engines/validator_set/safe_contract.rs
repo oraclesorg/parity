@@ -217,6 +217,11 @@ impl ValidatorSafeContract {
 	}
 
 	pub(crate) fn queue_report(&self, data: (Address, BlockNumber, Vec<u8>)) {
+		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
+		if self.posdao_transition.map_or(true, |block_num| data.1 < block_num) {
+			trace!(target: "engine", "Skipping queueing a malicious behavior report");
+			return;
+		}
 		self.queued_reports
 			.lock()
 			.push_back(data)
@@ -379,6 +384,7 @@ impl ValidatorSet for ValidatorSafeContract {
 	{
 		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
 		if self.posdao_transition.map_or(true, |block_num| header.number() < block_num) {
+			trace!(target: "engine", "Skipping a call to emitInitiateChange");
 			return Ok(Vec::new());
 		}
 		self.filter_report_queue(header.author(), header.number())?;
@@ -404,6 +410,7 @@ impl ValidatorSet for ValidatorSafeContract {
 	fn on_close_block(&self, header: &Header, our_address: &Address) -> Result<(), Error> {
 		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
 		if self.posdao_transition.map_or(true, |block_num| header.number() < block_num) {
+			trace!(target: "engine", "Skipping resending of queued malicious behavior reports");
 			return Ok(());
 		}
 		let client = self.client.read().as_ref().and_then(Weak::upgrade).ok_or("No client!")?;
