@@ -44,7 +44,10 @@ use self::multi::Multi;
 use super::SystemCall;
 
 /// Creates a validator set from the given spec and initializes a transition to POSDAO AuRa consensus.
-pub fn new_validator_set_posdao(spec: ValidatorSpec, posdao_transition: Option<BlockNumber>) -> Box<ValidatorSet> {
+pub fn new_validator_set_posdao(
+	spec: ValidatorSpec,
+	posdao_transition: Option<BlockNumber>
+) -> Box<ValidatorSet> {
 	match spec {
 		ValidatorSpec::List(list) =>
 			Box::new(SimpleList::new(list.into_iter().map(Into::into).collect())),
@@ -55,7 +58,10 @@ pub fn new_validator_set_posdao(spec: ValidatorSpec, posdao_transition: Option<B
 		ValidatorSpec::Multi(sequence) => Box::new(Multi::new(
 			sequence
 				.into_iter()
-				.map(|(block, set)| (block.into(), new_validator_set(set)))
+				.map(|(block, set)| (
+					block.into(),
+					new_validator_set_posdao(set, posdao_transition)
+				))
 				.collect()
 		)),
 	}
