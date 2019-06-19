@@ -1392,6 +1392,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 	fn on_prepare_block(&self, block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> {
 		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
 		if self.posdao_transition.map_or(true, |block_num| block.header().number() < block_num) {
+			trace!(target: "engine", "Skipping calls to POSDAO randomness and validator set contracts");
 			return Ok(Vec::new());
 		}
 		// Genesis is never a new block, but might as well check.
