@@ -54,7 +54,7 @@ pub fn new_validator_set_posdao(
 		ValidatorSpec::SafeContract(address) =>
 			Box::new(ValidatorSafeContract::new(address.into(), posdao_transition)),
 		ValidatorSpec::Contract(address) =>
-			Box::new(ValidatorContract::new(address.into())),
+			Box::new(ValidatorContract::new(address.into(), posdao_transition)),
 		ValidatorSpec::Multi(sequence) => Box::new(Multi::new(
 			sequence
 				.into_iter()

@@ -43,10 +43,10 @@ pub struct ValidatorContract {
 }
 
 impl ValidatorContract {
-	pub fn new(contract_address: Address) -> Self {
+	pub fn new(contract_address: Address, posdao_transition: Option<BlockNumber>) -> Self {
 		ValidatorContract {
 			contract_address,
-			validators: ValidatorSafeContract::new(contract_address, None),
+			validators: ValidatorSafeContract::new(contract_address, posdao_transition),
 			client: RwLock::new(None),
 		}
 	}
@@ -173,7 +173,10 @@ mod tests {
 	#[test]
 	fn fetches_validators() {
 		let client = generate_dummy_client_with_spec(Spec::new_validator_contract);
-		let vc = Arc::new(ValidatorContract::new("0000000000000000000000000000000000000005".parse::<Address>().unwrap()));
+		let vc = Arc::new(ValidatorContract::new(
+			"0000000000000000000000000000000000000005".parse::<Address>().unwrap(),
+			None
+		));
 		vc.register_client(Arc::downgrade(&client) as _);
 		let last_hash = client.best_block_header().hash();
 		assert!(vc.contains(&last_hash, &"7d577a597b2742b498cb5cf0c26cdcd726d39e6e".parse::<Address>().unwrap()));
