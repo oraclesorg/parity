@@ -28,6 +28,6 @@ use uint::Uint;
 pub enum StepDuration {
 	/// Duration of all steps.
 	Single(Uint),
-	/// Step duration transitions: a mapping of starting block numbers to step durations.
+	/// Step duration transitions: a mapping of timestamp to step durations.
 	Transitions(BTreeMap<Uint, Uint>),
 }
