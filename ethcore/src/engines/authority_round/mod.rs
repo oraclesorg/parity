@@ -61,7 +61,7 @@ pub type RandomnessPhaseError = randomness::PhaseError;
 /// `AuthorityRound` params.
 pub struct AuthorityRoundParams {
 	/// A map defining intervals of blocks with the given times (in seconds) to wait before next
-	/// block or authority switching. The keys in the map are numbers of starting blocks of those
+	/// block or authority switching. The keys in the map are timestamps of starting blocks of those
 	/// periods. The entry at `0` should be defined.
 	///
 	/// Wait times (durations) are deliberately typed as `u16` since larger values lead to slow
@@ -115,7 +115,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 		let step_durations: BTreeMap<u64, u16> = match p.step_duration {
 			StepDuration::Single(u) => iter::once((0, map_step_duration(u))).collect(),
 			StepDuration::Transitions(tr) => {
-				tr.into_iter().map(|(blknum, u)| (blknum.into(), map_step_duration(u))).collect()
+				tr.into_iter().map(|(timestamp, u)| (timestamp.into(), map_step_duration(u))).collect()
 			}
 		};
 
@@ -188,14 +188,19 @@ impl Step {
 		let now = unix_now();
 		let mut prev_dur = u64::from(self.durations[&0]);
 		let mut prev_step = 0u64;
-		let mut time = 0u64;
+		let mut prev_time = 0u64;
 		let next_step = self.load().checked_add(1)?;
-		for (step, dur) in self.durations.range(..next_step).skip(1) {
-			time = time.checked_add(step.checked_sub(prev_step)?.checked_mul(prev_dur)?)?;
-			prev_step = *step;
+		for (time, dur) in self.durations.iter().skip(1) {
+			let step_diff = time.checked_add(prev_dur)?.checked_sub(1)?.checked_sub(prev_time)?.checked_div(prev_dur)?;
+			let step = prev_step.checked_add(step_diff)?;
+			if step >= next_step {
+				break;
+			}
+			prev_step = step;
+			prev_time = step_diff.checked_mul(prev_dur)?.checked_add(prev_time)?;
 			prev_dur = u64::from(*dur);
 		}
-		time = time.checked_add(next_step.checked_sub(prev_step)?.checked_mul(prev_dur)?)?;
+		let time = prev_time.checked_add(next_step.checked_sub(prev_step)?.checked_mul(prev_dur)?)?;
 		let step_end = Duration::from_secs(time);
 		if step_end > now {
 			Some(step_end - now)
@@ -228,20 +233,22 @@ impl Step {
 	}
 
 	fn opt_calibrate(&self) -> Option<()> {
-		let now = unix_now();
+		let now = unix_now().as_secs();
 		let mut prev_dur = u64::from(self.durations[&0]);
 		let mut prev_step = 0u64;
 		let mut prev_time = 0u64;
-		for (step, dur) in self.durations.iter().skip(1) {
-			let next_time = prev_time.checked_add(step.checked_sub(prev_step)?.checked_mul(prev_dur)?)?;
-			if Duration::from_secs(next_time) >= now {
+		for (time, dur) in self.durations.range(..now).skip(1) {
+			let step_diff = time.checked_add(prev_dur)?.checked_sub(1)?.checked_sub(prev_time)?.checked_div(prev_dur)?;
+			let step = prev_step.checked_add(step_diff)?;
+			let next_time = step_diff.checked_mul(prev_dur)?.checked_add(prev_time)?;
+			if next_time >= now {
 				break;
 			}
 			prev_time = next_time;
-			prev_step = *step;
+			prev_step = step;
 			prev_dur = u64::from(*dur);
 		}
-		let new_step = (now.as_secs().checked_sub(prev_time)? / prev_dur).checked_add(prev_step)?;
+		let new_step = (now.checked_sub(prev_time)? / prev_dur).checked_add(prev_step)?;
 		self.inner.store(new_step, AtomicOrdering::SeqCst);
 		Some(())
 	}
@@ -2090,10 +2097,7 @@ mod tests {
 		let step = Step {
 			calibrate: false,
 			inner: AtomicU64::new(::std::u64::MAX),
-			current_duration: AtomicU16::new(1),
 			durations: [(0, 1)].to_vec().into_iter().collect(),
-			starting_sec: AtomicU64::new(::std::u64::MAX),
-			starting_step: AtomicU64::new(::std::u64::MAX),
 		};
 		step.increment();
 	}
@@ -2107,10 +2111,7 @@ mod tests {
 		let step = Step {
 			calibrate: false,
 			inner: AtomicU64::new(::std::u64::MAX),
-			current_duration: AtomicU16::new(1),
 			durations: [(0, 1)].to_vec().into_iter().collect(),
-			starting_sec: AtomicU64::new(::std::u64::MAX),
-			starting_step: AtomicU64::new(::std::u64::MAX),
 		};
 		step.duration_remaining();
 	}
