@@ -1820,7 +1820,7 @@ mod tests {
 			strict_empty_steps_transition: 0,
 			quorum_2_3_transition: 0,
 			randomness_contract_address: None,
-			posdao_transition: None,
+			posdao_transition: Some(0),
 		};
 
 		// mutate aura params
