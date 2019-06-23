@@ -1743,6 +1743,7 @@ dependencies = [
  "rustc-hex 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.89 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.39 (registry+https://github.com/rust-lang/crates.io-index)",
+ "toml 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -4475,6 +4476,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "serde 1.0.89 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "toolshed"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5272,6 +5281,7 @@ dependencies = [
 "checksum tokio-udp 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "da941144b816d0dcda4db3a1ba87596e4df5e860a72b70783fe435891f80601c"
 "checksum tokio-uds 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "22e3aa6d1fcc19e635418dc0a30ab5bd65d347973d6f43f1a37bf8d9d1335fc9"
 "checksum toml 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)" = "758664fc71a3a69038656bee8b6be6477d2a6c315a6b81f7081f591bffa4111f"
+"checksum toml 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "b8c96d7873fa7ef8bdeb3a9cda3ac48389b4154f32b9803b4bc26220b677b039"
 "checksum toolshed 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "450441e131c7663af72e63a33c02a6a1fbaaa8601dc652ed6757813bb55aeec7"
 "checksum trace-time 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "dbe82f2f0bf1991e163e757baf044282823155dd326e70f44ce2186c3c320cc9"
 "checksum transaction-pool 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f8d8bd3123931aa6e49dd03bc8a2400490e14701d779458d1f1fff1f04c6f666"
