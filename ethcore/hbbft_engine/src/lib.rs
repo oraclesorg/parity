@@ -45,16 +45,10 @@ mod tests {
 	use crate::test_helpers::{hbbft_client_setup, inject_transaction, HbbftTestData};
 	use ethcore::client::{BlockId, BlockInfo};
 	use ethereum_types::H256;
-	use hbbft::crypto::{
-		serde_impl::SerdeSecret, PublicKey, PublicKeySet, SecretKey, SecretKeyShare,
-	};
 	use hbbft::NetworkInfo;
 	use hbbft_testing::proptest::{gen_seed, TestRng, TestRngSeed};
 	use proptest::{prelude::ProptestConfig, proptest};
 	use rand::{Rng, SeedableRng};
-	use serde::{Deserialize, Serialize};
-	use std::collections::BTreeMap;
-	use toml::{map::Map, Value};
 
 	proptest! {
 		#![proptest_config(ProptestConfig {
@@ -172,93 +166,5 @@ mod tests {
 		for size in sizes {
 			test_with_size(&mut rng, size);
 		}
-	}
-
-	fn to_toml<N>(net_info: &NetworkInfo<N>) -> Value
-	where
-		N: hbbft::NodeIdT + Serialize,
-	{
-		let mut server = Map::new();
-
-		// Write the Secret Key Share
-		let wrapper = SerdeSecret(
-			net_info
-				.secret_key_share()
-				.expect("Secret Key Share needs to be provided"),
-		);
-		let sks_serialized = serde_json::to_string(&wrapper).expect("Serialization should succeed");
-		server.insert("hbbft_secret_share".into(), Value::String(sks_serialized));
-
-		// Write the Secret Key
-		let wrapper = SerdeSecret(net_info.secret_key());
-		let sk_serialized = serde_json::to_string(&wrapper).expect("Serialization should succeed");
-		server.insert("hbbft_secret_key".into(), Value::String(sk_serialized));
-
-		// Write the Public Key Set
-		let pks_serialized =
-			serde_json::to_string(net_info.public_key_set()).expect("Serialization should succeed");
-		server.insert("hbbft_public_key_set".into(), Value::String(pks_serialized));
-
-		// Write the Public Keys
-		let pk_serialized =
-			serde_json::to_string(net_info.public_key_map()).expect("Serialization should succeed");
-		server.insert("hbbft_public_keys".into(), Value::String(pk_serialized));
-
-		let mut map = Map::new();
-		map.insert("mining".into(), Value::Table(server));
-		Value::Table(map)
-	}
-
-	#[derive(Deserialize)]
-	struct HbbftKeys {
-		pub hbbft_secret_share: String,
-		pub hbbft_secret_key: String,
-		pub hbbft_public_key_set: String,
-		pub hbbft_public_keys: String,
-	}
-
-	#[derive(Deserialize)]
-	struct HbbftOptions {
-		pub mining: HbbftKeys,
-	}
-
-	fn compare<'a, N>(net_info: &NetworkInfo<N>, options: &'a HbbftOptions)
-	where
-		N: hbbft::NodeIdT + Serialize + Deserialize<'a>,
-	{
-		// Parse and compare the Secret Key Share
-		let secret_key_share: SerdeSecret<SecretKeyShare> =
-			serde_json::from_str(&options.mining.hbbft_secret_share).unwrap();
-		assert_eq!(*net_info.secret_key_share().unwrap(), *secret_key_share);
-
-		// Parse and compare the Secret Key
-		let secret_key: SerdeSecret<SecretKey> =
-			serde_json::from_str(&options.mining.hbbft_secret_key).unwrap();
-		assert_eq!(*net_info.secret_key(), *secret_key);
-
-		// Parse and compare the Public Key Set
-		let pks: PublicKeySet = serde_json::from_str(&options.mining.hbbft_public_key_set).unwrap();
-		assert_eq!(*net_info.public_key_set(), pks);
-
-		// Parse and compare the Node IDs and Public Keys
-		let pk: BTreeMap<N, PublicKey> =
-			serde_json::from_str(&options.mining.hbbft_public_keys).unwrap();
-		assert_eq!(*net_info.public_key_map(), pk);
-	}
-
-	#[test]
-	fn test_network_info_serde() {
-		let mut rng = rand::thread_rng();
-		let net_infos = NetworkInfo::generate_map(0..1usize, &mut rng)
-			.expect("NetworkInfo generation to always succeed");
-		let net_info = net_infos.get(&0).expect("First NetworkInfo needs to exist");
-
-		let toml_string = toml::to_string(&to_toml(&net_info)).unwrap();
-
-		// For debugging toml output:
-		//println!("{}", toml_string);
-
-		let config: HbbftOptions = toml::from_str(&toml_string).unwrap();
-		compare(net_info, &config);
 	}
 }

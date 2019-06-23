@@ -1721,6 +1721,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hbbft_config_generator"
+version = "0.0.1"
+dependencies = [
+ "clap 2.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "hbbft 0.1.1 (git+https://github.com/poanetwork/hbbft.git)",
+ "hbbft_testing 0.1.0 (git+https://github.com/poanetwork/hbbft.git)",
+ "rand 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.89 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.39 (registry+https://github.com/rust-lang/crates.io-index)",
+ "toml 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "hbbft_engine"
 version = "0.0.1"
 dependencies = [
