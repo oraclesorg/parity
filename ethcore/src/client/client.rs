@@ -69,7 +69,7 @@ use error::{
 };
 use executive::{Executive, Executed, TransactOptions, contract_address};
 use factory::{Factories, VmFactory};
-use miner::{Miner, MinerService};
+use miner::{Miner, MinerService, HbbftOptions};
 use snapshot::{self, io as snapshot_io, SnapshotClient};
 use spec::Spec;
 use state::{self, State};
@@ -88,10 +88,6 @@ pub use types::block_status::BlockStatus;
 pub use blockchain::CacheSize as BlockChainCacheSize;
 pub use verification::QueueInfo as BlockQueueInfo;
 use db::Writable;
-
-// Temporary dependency directly on hbbft to access the NetworkInfo struct
-use hbbft::NetworkInfo;
-use hbbft::crypto::{PublicKey, PublicKeySet, SecretKey, SecretKeyShare, serde_impl::SerdeSecret};
 
 use_contract!(registry, "res/contracts/registrar.json");
 
@@ -2513,21 +2509,11 @@ impl super::traits::EngineClient for Client {
 		self.importer.miner.create_pending_block(self, txns, timestamp)
 	}
 
-	/// Temporary access to a NetworkInfo struct required by the hbbft consensus engine
-	/// Should be removed as soon as all information required to build this struct
-	/// can be obtained through the chain spec or contracts.
-	fn net_info(&self) -> Option<NetworkInfo<usize>> {
-		let options = self.importer.miner.hbbft_options();
-		let our_id: usize = serde_json::from_str(&options.hbbft_our_id).ok()?;
-		let secret_key_share: SerdeSecret<SecretKeyShare> =
-			serde_json::from_str(&options.hbbft_secret_share).ok()?;
-		let secret_key: SerdeSecret<SecretKey> =
-			serde_json::from_str(&options.hbbft_secret_key).ok()?;
-		let pks: PublicKeySet = serde_json::from_str(&options.hbbft_public_key_set).ok()?;
-		let pk: BTreeMap<usize, PublicKey> = serde_json::from_str(&options.hbbft_public_keys).ok()?;
-
-		// TODO: Get the Node ID as hbbft option as well!
-		Some(NetworkInfo::new(our_id, (*secret_key_share).clone(), pks, (*secret_key).clone(), pk))
+	/// Returns the currently configured options for the hbbft consensus engine.
+	/// TODO: Should be removed as soon as all information required to build this struct
+	///       can be obtained through the chain spec or contracts.
+	fn hbbft_options(&self) -> Option<HbbftOptions> {
+		Some(self.importer.miner.hbbft_options())
 	}
 }
 

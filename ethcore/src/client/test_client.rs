@@ -63,16 +63,13 @@ use error::{Error, EthcoreResult};
 use executed::CallError;
 use executive::Executed;
 use journaldb;
-use miner::{self, Miner, MinerService};
+use miner::{self, Miner, MinerService, HbbftOptions};
 use spec::Spec;
 use state::StateInfo;
 use state_db::StateDB;
 use trace::LocalizedTrace;
 use verification::queue::QueueInfo;
 use verification::queue::kind::blocks::Unverified;
-
-// Temporary dependency directly on hbbft to access the NetworkInfo struct
-use hbbft::NetworkInfo;
 
 /// Test client.
 pub struct TestBlockChainClient {
@@ -989,10 +986,10 @@ impl super::traits::EngineClient for TestBlockChainClient {
 		self.miner.create_pending_block(self, txns, timestamp)
 	}
 
-	/// Temporary access to a NetworkInfo struct required by the hbbft consensus engine
-	/// Should be removed as soon as all information required to build this struct
-	/// can be obtained through the chain spec or contracts.
-	fn net_info(&self) -> Option<NetworkInfo<usize>> {
+	/// Returns the currently configured options for the hbbft consensus engine.
+	/// TODO: Should be removed as soon as all information required to build this struct
+	///       can be obtained through the chain spec or contracts.
+	fn hbbft_options(&self) -> Option<HbbftOptions> {
 		None
 	}
 }

@@ -21,6 +21,7 @@ use blockchain::{BlockReceipts, TreeRoute};
 use bytes::Bytes;
 use call_contract::{CallContract, RegistryInfo};
 use ethcore_miner::pool::VerifiedTransaction;
+use miner::HbbftOptions;
 use ethereum_types::{H256, U256, Address};
 use evm::Schedule;
 use itertools::Itertools;
@@ -51,9 +52,6 @@ use state::StateInfo;
 use trace::LocalizedTrace;
 use verification::queue::QueueInfo as BlockQueueInfo;
 use verification::queue::kind::blocks::Unverified;
-
-// Temporary dependency directly on hbbft to access the NetworkInfo struct
-use hbbft::NetworkInfo;
 
 /// State information to be used during client query
 pub enum StateOrBlock {
@@ -481,10 +479,10 @@ pub trait EngineClient: Sync + Send + ChainInfo + Nonce {
 	/// Create block and queue it for sealing. Will return None if a block is already pending.
  	fn create_pending_block(&self, txns: Vec<SignedTransaction>, timestamp: u64) -> Option<ClosedBlock>;
 
-	/// Temporary access to a NetworkInfo struct required by the hbbft consensus engine
-	/// Should be removed as soon as all information required to build this struct
-	/// can be obtained through the chain spec or contracts.
-	fn net_info(&self) -> Option<NetworkInfo<usize>>;
+	/// Returns the currently configured options for the hbbft consensus engine.
+	/// TODO: Should be removed as soon as all information required to build this struct
+	///       can be obtained through the chain spec or contracts.
+	fn hbbft_options(&self) -> Option<HbbftOptions>;
 }
 
 /// Extended client interface for providing proofs of the state.

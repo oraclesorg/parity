@@ -20,6 +20,7 @@ use std::sync::{Weak, Arc};
 
 use ethcore::block::ClosedBlock;
 use ethcore::client::{ClientReport, EnvInfo, ClientIoMessage};
+use ethcore::miner::HbbftOptions;
 use ethcore::engines::{epoch, EthEngine, EpochChange, EpochTransition, Proof};
 use ethcore::machine::EthereumMachine;
 use ethcore::error::{Error, EthcoreResult};
@@ -667,10 +668,10 @@ impl<T: ChainDataFetcher> ::ethcore::client::EngineClient for Client<T> {
 		None
 	}
 
-	/// Temporary access to a NetworkInfo struct required by the hbbft consensus engine
-	/// Should be removed as soon as all information required to build this struct
-	/// can be obtained through the chain spec or contracts.
-	fn net_info(&self) -> Option<NetworkInfo<usize>> {
+	/// Returns the currently configured options for the hbbft consensus engine.
+	/// TODO: Should be removed as soon as all information required to build this struct
+	///       can be obtained through the chain spec or contracts.
+	fn hbbft_options(&self) -> Option<HbbftOptions> {
 		warn!(target: "client", "No miner available in light clients.");
 		None
 	}
