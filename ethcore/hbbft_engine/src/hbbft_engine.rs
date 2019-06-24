@@ -7,12 +7,15 @@ use ethcore::engines::{
 };
 use ethcore::error::Error;
 use ethcore::machine::EthereumMachine;
+use ethcore::miner::HbbftOptions;
+use hbbft::crypto::{serde_impl::SerdeSecret, PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
 use hbbft::honey_badger::{HoneyBadgerBuilder, Step};
-use hbbft::Target;
+use hbbft::{NetworkInfo, Target};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use rlp::{Decodable, Rlp};
 use serde_json;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 use types::header::{ExtendedHeader, Header};
 use types::transaction::SignedTransaction;
@@ -28,6 +31,7 @@ pub struct HoneyBadgerBFT {
 	signer: RwLock<Option<Box<EngineSigner>>>,
 	machine: EthereumMachine,
 	transactions_trigger: usize,
+	network_info: RwLock<Option<NetworkInfo<NodeId>>>,
 	honey_badger: RwLock<Option<HoneyBadger>>,
 }
 
@@ -42,9 +46,29 @@ impl HoneyBadgerBFT {
 			machine: machine,
 			// TODO: configure through spec params
 			transactions_trigger: 1,
+			network_info: RwLock::new(None),
 			honey_badger: RwLock::new(None),
 		});
 		Ok(engine)
+	}
+
+	fn new_network_info(options: HbbftOptions) -> Option<NetworkInfo<NodeId>> {
+		let our_id: NodeId = serde_json::from_str(&options.hbbft_our_id).ok()?;
+		let secret_key_share: SerdeSecret<SecretKeyShare> =
+			serde_json::from_str(&options.hbbft_secret_share).ok()?;
+		let secret_key: SerdeSecret<SecretKey> =
+			serde_json::from_str(&options.hbbft_secret_key).ok()?;
+		let pks: PublicKeySet = serde_json::from_str(&options.hbbft_public_key_set).ok()?;
+		let pk: BTreeMap<NodeId, PublicKey> =
+			serde_json::from_str(&options.hbbft_public_keys).ok()?;
+
+		Some(NetworkInfo::new(
+			our_id,
+			(*secret_key_share).clone(),
+			pks,
+			(*secret_key).clone(),
+			pk,
+		))
 	}
 
 	fn new_honey_badger(&self) -> Option<HoneyBadger> {
@@ -52,9 +76,14 @@ impl HoneyBadgerBFT {
 			if let Some(client) = weak.upgrade() {
 				// TODO: Retrieve the information to build a node-specific NetworkInfo
 				//       struct from the chain spec and from contracts.
-				let net_info = client.net_info().unwrap();
+				let options = client
+					.hbbft_options()
+					.expect("hbbft options are expected to exist");
+				let net_info = HoneyBadgerBFT::new_network_info(options)
+					.expect("hbbft parameter deserialization is expected to succeed");
 				let mut builder: HoneyBadgerBuilder<Contribution, _> =
 					HoneyBadger::builder(Arc::new(net_info.clone()));
+				*self.network_info.write() = Some(net_info);
 				return Some(builder.build());
 			}
 		}
@@ -130,9 +159,13 @@ impl HoneyBadgerBFT {
 					Target::All => {
 						// for debugging
 						// println!("Sending broadcast message: {:?}", m.message);
-						let net_info = client.net_info().unwrap();
-						for peer_id in net_info.all_ids().filter(|p| p != &net_info.our_id()) {
-							client.send_consensus_message(ser.clone(), *peer_id);
+
+						if let Some(ref net_info) = *self.network_info.read() {
+							for peer_id in net_info.all_ids().filter(|p| p != &net_info.our_id()) {
+								client.send_consensus_message(ser.clone(), *peer_id);
+							}
+						} else {
+							panic!("Network Info needs to be initialized when dispatching hbbft consensus messages");
 						}
 					}
 				}
