@@ -53,8 +53,10 @@ use state::StateInfo;
 
 /// Temporary: This data will be supplied by contracts.
 /// TODO: Remove once contracts supply the necessary data.
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 pub struct HbbftOptions {
+	/// The node id of this validator
+	pub hbbft_our_id: String,
 	/// Threshold Cryptography secret share.
 	pub hbbft_secret_share: String,
 	/// The secret key of this hbbft validator.
@@ -145,6 +147,10 @@ pub trait MinerService : Send + Sync {
 	/// Temporary: This data will be supplied by contracts instead.
 	/// TODO: Remove once contracts supply the necessary data.
 	fn set_hbbft_options(&self, options: HbbftOptions);
+
+	/// Temporary: This data will be supplied by contracts instead.
+	/// TODO: Remove once contracts supply the necessary data.
+	fn hbbft_options(&self) -> HbbftOptions;
 
 	/// Set info necessary to sign consensus messages and block authoring.
 	///

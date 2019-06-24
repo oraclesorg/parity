@@ -804,6 +804,10 @@ usage! {
 			"--engine-signer=[ADDRESS]",
 			"Specify the address which should be used to sign consensus messages and issue blocks. Relevant only to non-PoW chains.",
 
+			ARG arg_hbbft_our_id: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.hbbft_our_id.clone(),
+			"--hbbft-our-id=[STRING]",
+			"Specify the hbbft node id of the the validator.",
+
 			ARG arg_hbbft_secret_share: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.hbbft_secret_share.clone(),
 			"--hbbft-secret-share=[STRING]",
 			"Specify the secret share for threshold encryption for the hbbft validator.",
@@ -1359,6 +1363,7 @@ struct Ipfs {
 struct Mining {
 	author: Option<String>,
 	engine_signer: Option<String>,
+	hbbft_our_id: Option<String>,
 	hbbft_secret_share: Option<String>,
 	hbbft_secret_key: Option<String>,
 	hbbft_public_key_set: Option<String>,
@@ -1805,6 +1810,7 @@ mod tests {
 			// -- Sealing/Mining Options
 			arg_author: Some("0xdeadbeefcafe0000000000000000000000000001".into()),
 			arg_engine_signer: Some("0xdeadbeefcafe0000000000000000000000000001".into()),
+			arg_hbbft_our_id: Some("7".into()),
 			arg_hbbft_secret_share: Some("0xdeadbeefcafe0000000000000000000000000000000000000000000000000001".into()),
 			arg_hbbft_secret_key: Some("0xdeadbeefcafe0000000000000000000000000000000000000000000000000002".into()),
 			arg_hbbft_public_key_set: Some("deadbeefcafe0000000000000000000000000000000000000000000000000003deadbeefcafe0000000000000000000000000000000000000000000000000004".into()),
@@ -2088,6 +2094,7 @@ mod tests {
 			mining: Some(Mining {
 				author: Some("0xdeadbeefcafe0000000000000000000000000001".into()),
 				engine_signer: Some("0xdeadbeefcafe0000000000000000000000000001".into()),
+				hbbft_our_id: None,
 				hbbft_secret_share: None,
 				hbbft_secret_key: None,
 				hbbft_public_key_set: None,

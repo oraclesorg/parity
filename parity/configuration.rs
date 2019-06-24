@@ -443,6 +443,7 @@ impl Configuration {
 			engine_signer: self.engine_signer()?,
 			work_notify: self.work_notify(),
 			local_accounts: HashSet::from_iter(to_addresses(&self.args.arg_tx_queue_locals)?.into_iter()),
+			hbbft_our_id: self.args.arg_hbbft_our_id.clone(),
 			hbbft_secret_key_share: self.args.arg_hbbft_secret_share.clone(),
 			hbbft_secret_key: self.args.arg_hbbft_secret_key.clone(),
 			hbbft_public_key_set: self.args.arg_hbbft_public_key_set.clone(),

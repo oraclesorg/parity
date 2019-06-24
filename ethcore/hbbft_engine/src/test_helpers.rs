@@ -4,6 +4,7 @@ use rustc_hex::FromHex;
 
 use ethcore::client::Client;
 use ethcore::engines::signer::from_keypair;
+use ethcore::miner::HbbftOptions;
 use ethcore::miner::{Miner, MinerService};
 use ethcore::spec::Spec;
 use ethcore::test_helpers::generate_dummy_client_with_spec;
@@ -11,6 +12,7 @@ use ethcore::test_helpers::TestNotify;
 use ethereum_types::U256;
 use ethkey::{Generator, Random};
 use hash::keccak;
+use hbbft::crypto::serde_impl::SerdeSecret;
 use hbbft::NetworkInfo;
 use types::transaction::{Action, SignedTransaction, Transaction};
 
@@ -32,9 +34,33 @@ pub struct HbbftTestData {
 	pub miner: Arc<Miner>,
 }
 
+fn serialize_netinfo(net_info: NetworkInfo<usize>) -> HbbftOptions {
+	let hbbft_our_id = serde_json::to_string(&net_info.our_id()).unwrap();
+
+	let wrapper = SerdeSecret(net_info.secret_key_share().unwrap());
+	let hbbft_secret_share = serde_json::to_string(&wrapper).unwrap();
+
+	let wrapper = SerdeSecret(net_info.secret_key());
+	let hbbft_secret_key = serde_json::to_string(&wrapper).unwrap();
+
+	let hbbft_public_key_set = serde_json::to_string(net_info.public_key_set()).unwrap();
+	let hbbft_public_keys = serde_json::to_string(net_info.public_key_map()).unwrap();
+
+	HbbftOptions {
+		hbbft_our_id,
+		hbbft_secret_share,
+		hbbft_secret_key,
+		hbbft_public_key_set,
+		hbbft_public_keys,
+	}
+}
+
 pub fn hbbft_client_setup(net_info: NetworkInfo<usize>) -> HbbftTestData {
 	let client = hbbft_client();
-	client.set_netinfo(net_info);
+
+	// Get miner reference
+	let miner = client.miner();
+	miner.set_hbbft_options(serialize_netinfo(net_info));
 
 	let engine = client.engine();
 	// Set the signer *before* registering the client with the engine.
@@ -47,9 +73,6 @@ pub fn hbbft_client_setup(net_info: NetworkInfo<usize>) -> HbbftTestData {
 	// Register notify object for capturing consensus messages
 	let notify = Arc::new(TestNotify::default());
 	client.add_notify(notify.clone());
-
-	// Get miner reference
-	let miner = client.miner();
 
 	HbbftTestData {
 		client: client.clone(),
