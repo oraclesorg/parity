@@ -18,6 +18,10 @@ where
 {
 	let mut server = Map::new();
 
+	// Write Node ID
+	let our_id_serialized = serde_json::to_string(&net_info.our_id()).unwrap();
+	server.insert("hbbft_our_id".into(), Value::String(our_id_serialized));
+
 	// Write the Secret Key Share
 	let wrapper = SerdeSecret(net_info.secret_key_share().unwrap());
 	let sks_serialized = serde_json::to_string(&wrapper).unwrap();
@@ -90,6 +94,10 @@ mod tests {
 	where
 		N: hbbft::NodeIdT + Serialize + Deserialize<'a>,
 	{
+		// Parse and compare the Public Key Set
+		let our_id: N = serde_json::from_str(&options.mining.hbbft_our_id).unwrap();
+		assert_eq!(*net_info.our_id(), our_id);
+
 		// Parse and compare the Secret Key Share
 		let secret_key_share: SerdeSecret<SecretKeyShare> =
 			serde_json::from_str(&options.mining.hbbft_secret_share).unwrap();

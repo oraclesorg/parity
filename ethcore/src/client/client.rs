@@ -91,6 +91,7 @@ use db::Writable;
 
 // Temporary dependency directly on hbbft to access the NetworkInfo struct
 use hbbft::NetworkInfo;
+use hbbft::crypto::{PublicKey, PublicKeySet, SecretKey, SecretKeyShare, serde_impl::SerdeSecret};
 
 use_contract!(registry, "res/contracts/registrar.json");
 
@@ -244,10 +245,6 @@ pub struct Client {
 	exit_handler: Mutex<Option<Box<Fn(String) + 'static + Send>>>,
 
 	importer: Importer,
-
-	// Temporary until all data necessary to construct a hbbft NetworkInfo
-	// can be obtained through chain spec or contracts.
-	net_info: Mutex<Option<NetworkInfo<usize>>>,
 }
 
 impl Importer {
@@ -800,7 +797,6 @@ impl Client {
 			exit_handler: Mutex::new(None),
 			importer,
 			config,
-			net_info: Mutex::new(None),
 		});
 
 		// prune old states.
@@ -1026,14 +1022,6 @@ impl Client {
 	#[cfg(any(test, feature = "test-helpers"))]
 	pub fn chain(&self) -> Arc<BlockChain> {
 		self.chain.read().clone()
-	}
-
-	/// Temporary access to a NetworkInfo struct required by the hbbft consensus engine
-	/// Should be removed as soon as all information required to build this struct
-	/// can be obtained through the chain spec or contracts.
-	#[cfg(any(test, feature = "test-helpers"))]
-	pub fn set_netinfo(&self, net_info: NetworkInfo<usize>) {
-		*self.net_info.lock() = Some(net_info);
 	}
 
 	/// Replace io channel. Useful for testing.
@@ -2529,7 +2517,17 @@ impl super::traits::EngineClient for Client {
 	/// Should be removed as soon as all information required to build this struct
 	/// can be obtained through the chain spec or contracts.
 	fn net_info(&self) -> Option<NetworkInfo<usize>> {
-		self.net_info.lock().clone()
+		let options = self.importer.miner.hbbft_options();
+		let our_id: usize = serde_json::from_str(&options.hbbft_our_id).ok()?;
+		let secret_key_share: SerdeSecret<SecretKeyShare> =
+			serde_json::from_str(&options.hbbft_secret_share).ok()?;
+		let secret_key: SerdeSecret<SecretKey> =
+			serde_json::from_str(&options.hbbft_secret_key).ok()?;
+		let pks: PublicKeySet = serde_json::from_str(&options.hbbft_public_key_set).ok()?;
+		let pk: BTreeMap<usize, PublicKey> = serde_json::from_str(&options.hbbft_public_keys).ok()?;
+
+		// TODO: Get the Node ID as hbbft option as well!
+		Some(NetworkInfo::new(our_id, (*secret_key_share).clone(), pks, (*secret_key).clone(), pk))
 	}
 }
 

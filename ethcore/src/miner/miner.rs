@@ -933,6 +933,10 @@ impl miner::MinerService for Miner {
 		*self.hbbft_options.write() = options;
 	}
 
+	fn hbbft_options(&self) -> miner::HbbftOptions {
+		(*self.hbbft_options.read()).clone()
+	}
+
 	fn set_author(&self, author: Author) {
 		self.params.write().author = author.address();
 
