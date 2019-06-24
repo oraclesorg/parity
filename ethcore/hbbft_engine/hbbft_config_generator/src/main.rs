@@ -3,6 +3,7 @@ extern crate hbbft;
 extern crate rand;
 extern crate serde;
 extern crate toml;
+extern crate ethcore;
 
 use clap::{App, Arg};
 use hbbft::crypto::{serde_impl::SerdeSecret};
@@ -81,19 +82,11 @@ mod tests {
 	use hbbft::crypto::{PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
 
 	#[derive(Deserialize)]
-	struct HbbftKeys {
-		pub hbbft_secret_share: String,
-		pub hbbft_secret_key: String,
-		pub hbbft_public_key_set: String,
-		pub hbbft_public_keys: String,
+	struct TomlHbbftOptions {
+		pub mining: ethcore::miner::HbbftOptions,
 	}
 
-	#[derive(Deserialize)]
-	struct HbbftOptions {
-		pub mining: HbbftKeys,
-	}
-
-	fn compare<'a, N>(net_info: &NetworkInfo<N>, options: &'a HbbftOptions)
+	fn compare<'a, N>(net_info: &NetworkInfo<N>, options: &'a TomlHbbftOptions)
 	where
 		N: hbbft::NodeIdT + Serialize + Deserialize<'a>,
 	{
@@ -128,7 +121,7 @@ mod tests {
 		// For debugging toml output:
 		//println!("{}", toml_string);
 
-		let config: HbbftOptions = toml::from_str(&toml_string).unwrap();
+		let config: TomlHbbftOptions = toml::from_str(&toml_string).unwrap();
 		compare(net_info, &config);
 	}
 }

@@ -277,6 +277,10 @@ pub struct MinerExtras {
 	pub gas_range_target: (U256, U256),
 	pub work_notify: Vec<String>,
 	pub local_accounts: HashSet<Address>,
+	pub hbbft_secret_key_share: Option<String>,
+	pub hbbft_secret_key: Option<String>,
+	pub hbbft_public_key_set: Option<String>,
+	pub hbbft_public_keys: Option<String>,
 }
 
 impl Default for MinerExtras {
@@ -288,6 +292,10 @@ impl Default for MinerExtras {
 			gas_range_target: (8_000_000.into(), 10_000_000.into()),
 			work_notify: Default::default(),
 			local_accounts: Default::default(),
+			hbbft_secret_key_share: None,
+			hbbft_secret_key: None,
+			hbbft_public_key_set: None,
+			hbbft_public_keys: None,
 		}
 	}
 }

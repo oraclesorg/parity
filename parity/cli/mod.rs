@@ -805,19 +805,19 @@ usage! {
 			"Specify the address which should be used to sign consensus messages and issue blocks. Relevant only to non-PoW chains.",
 
 			ARG arg_hbbft_secret_share: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.hbbft_secret_share.clone(),
-			"--hbbft-secret-share=[u64; 4]",
+			"--hbbft-secret-share=[STRING]",
 			"Specify the secret share for threshold encryption for the hbbft validator.",
 
 			ARG arg_hbbft_secret_key: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.hbbft_secret_key.clone(),
-			"--hbbft-secret-key=[u64; 4]",
+			"--hbbft-secret-key=[STRING]",
 			"Specify the secret key for the hbbft validator (Note: May be replaced with the engine signer secret key).",
 
 			ARG arg_hbbft_public_key_set: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.hbbft_public_key_set.clone(),
 			"--hbbft-public-key-set=[STRING]",
 			"Serialization of the threshold encryption public commitmet for hbbft.",
 
-			ARG arg_hbbft_public_keys: (Vec<String>) = Vec::new(), or |c: &Config| c.mining.as_ref()?.hbbft_public_keys.clone(),
-			"--hbbft-public-keys=[STRING]...",
+			ARG arg_hbbft_public_keys: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.hbbft_public_keys.clone(),
+			"--hbbft-public-keys=[STRING]",
 			"Provide a list of public keys of all hbbft validators.",
 
 			ARG arg_tx_gas_limit: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.tx_gas_limit.clone(),
@@ -1362,7 +1362,7 @@ struct Mining {
 	hbbft_secret_share: Option<String>,
 	hbbft_secret_key: Option<String>,
 	hbbft_public_key_set: Option<String>,
-	hbbft_public_keys: Option<Vec<String>>,
+	hbbft_public_keys: Option<String>,
 	force_sealing: Option<bool>,
 	reseal_on_uncle: Option<bool>,
 	reseal_on_txs: Option<String>,
@@ -1808,7 +1808,7 @@ mod tests {
 			arg_hbbft_secret_share: Some("0xdeadbeefcafe0000000000000000000000000000000000000000000000000001".into()),
 			arg_hbbft_secret_key: Some("0xdeadbeefcafe0000000000000000000000000000000000000000000000000002".into()),
 			arg_hbbft_public_key_set: Some("deadbeefcafe0000000000000000000000000000000000000000000000000003deadbeefcafe0000000000000000000000000000000000000000000000000004".into()),
-			arg_hbbft_public_keys: vec!["0xdeadbeefcafe0000000000000000000000000000000000000000000000000005".into(), "0xdeadbeefcafe0000000000000000000000000000000000000000000000000006".into()],
+			arg_hbbft_public_keys: Some("0xdeadbeefcafe00000000000000000000000000000000000000000000000000050xdeadbeefcafe0000000000000000000000000000000000000000000000000006".into()),
 			flag_force_sealing: true,
 			arg_reseal_on_txs: "all".into(),
 			arg_reseal_min_period: 4000u64,

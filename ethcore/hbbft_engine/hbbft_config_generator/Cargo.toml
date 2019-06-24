@@ -15,5 +15,6 @@ hbbft_testing = { git = "https://github.com/poanetwork/hbbft" }
 toml = "0.5.1"
 rand = "0.6.5"
 clap = "2"
+ethcore = { path = "../.." }
 
 [dev-dependencies]

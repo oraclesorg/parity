@@ -237,6 +237,7 @@ pub struct Miner {
 	// NOTE [ToDr]  When locking always lock in this order!
 	sealing: Mutex<SealingWork>,
 	params: RwLock<AuthoringParams>,
+	hbbft_options: RwLock<miner::HbbftOptions>,
 	#[cfg(feature = "work-notify")]
 	listeners: RwLock<Vec<Box<NotifyWork>>>,
 	nonce_cache: NonceCache,
@@ -284,6 +285,7 @@ impl Miner {
 				last_request: None,
 			}),
 			params: RwLock::new(AuthoringParams::default()),
+			hbbft_options: RwLock::new(miner::HbbftOptions::default()),
 			#[cfg(feature = "work-notify")]
 			listeners: RwLock::new(vec![]),
 			gas_pricer: Mutex::new(gas_pricer),
@@ -925,6 +927,10 @@ impl miner::MinerService for Miner {
 
 	fn set_extra_data(&self, extra_data: Bytes) {
 		self.params.write().extra_data = extra_data;
+	}
+
+	fn set_hbbft_options(&self, options: miner::HbbftOptions) {
+		*self.hbbft_options.write() = options;
 	}
 
 	fn set_author(&self, author: Author) {

@@ -51,6 +51,20 @@ use client::{
 use error::Error;
 use state::StateInfo;
 
+/// Temporary: This data will be supplied by contracts.
+/// TODO: Remove once contracts supply the necessary data.
+#[derive(Deserialize, Default)]
+pub struct HbbftOptions {
+	/// Threshold Cryptography secret share.
+	pub hbbft_secret_share: String,
+	/// The secret key of this hbbft validator.
+	pub hbbft_secret_key: String,
+	/// Threshold Cryptography public keys.
+	pub hbbft_public_key_set: String,
+	/// The public keys of all hbbft validators.
+	pub hbbft_public_keys: String,
+}
+
 /// Provides methods to verify incoming external transactions
 pub trait TransactionVerifierClient: Send + Sync
 	// Required for ServiceTransactionChecker
@@ -127,6 +141,10 @@ pub trait MinerService : Send + Sync {
 
 	/// Set the extra_data that we will seal blocks with.
 	fn set_extra_data(&self, extra_data: Bytes);
+
+	/// Temporary: This data will be supplied by contracts instead.
+	/// TODO: Remove once contracts supply the necessary data.
+	fn set_hbbft_options(&self, options: HbbftOptions);
 
 	/// Set info necessary to sign consensus messages and block authoring.
 	///
