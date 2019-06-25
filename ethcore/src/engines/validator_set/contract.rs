@@ -40,6 +40,9 @@ pub struct ValidatorContract {
 	contract_address: Address,
 	validators: ValidatorSafeContract,
 	client: RwLock<Option<Weak<dyn EngineClient>>>, // TODO [keorn]: remove
+	/// If set, this is the block number at which the consensus engine switches from AuRa to AuRa
+	/// with POSDAO modifications.
+	posdao_transition: Option<BlockNumber>,
 }
 
 impl ValidatorContract {
@@ -48,21 +51,32 @@ impl ValidatorContract {
 			contract_address,
 			validators: ValidatorSafeContract::new(contract_address, posdao_transition),
 			client: RwLock::new(None),
+			posdao_transition,
 		}
 	}
 }
 
 impl ValidatorContract {
-	fn transact(&self, data: Bytes) -> Result<(), ::error::Error> {
+	fn transact(&self, data: Bytes, zero_gas_price: bool) -> Result<(), ::error::Error> {
 		let client = self.client.read().as_ref().and_then(Weak::upgrade).ok_or("No client!")?;
 		let full_client = client.as_full_client().ok_or("No full client!")?;
-		match full_client.transact(Action::Call(self.contract_address), data, None, Some(0.into()), None) {
+		let gas_price = if zero_gas_price {
+			Some(0.into())
+		} else {
+			None
+		};
+		match full_client.transact(Action::Call(self.contract_address), data, None, gas_price, None) {
 			Ok(()) | Err(transaction::Error::AlreadyImported) => Ok(()),
 			Err(e) => Err(e)?,
 		}
 	}
 
-	fn do_report_malicious(&self, address: &Address, block: BlockNumber, proof: Bytes) -> Result<(), ::error::Error> {
+	fn do_report_malicious(
+		&self,
+		address: &Address,
+		block: BlockNumber,
+		proof: Bytes,
+	) -> Result<(), ::error::Error> {
 		let client = self.client.read().as_ref().and_then(Weak::upgrade).ok_or("No client!")?;
 		let latest = client.block_header(BlockId::Latest).ok_or("No latest block!")?;
 		if !self.contains(&latest.parent_hash(), address) {
@@ -71,7 +85,11 @@ impl ValidatorContract {
 		}
 		let data = validator_report::functions::report_malicious::encode_input(*address, block, proof);
 		self.validators.queue_report((*address, block, data.clone()));
-		self.transact(data)?;
+		let zero_gas_price = self.posdao_transition.map_or(
+			false,
+			|block_num| block_num <= block
+		);
+		self.transact(data, zero_gas_price)?;
 		warn!(target: "engine", "Reported malicious validator {} at block {}", address, block);
 		Ok(())
 	}
@@ -138,13 +156,17 @@ impl ValidatorSet for ValidatorContract {
 
 	fn report_benign(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber) {
 		let data = validator_report::functions::report_benign::encode_input(*address, block);
-		match self.transact(data) {
+		let zero_gas_price = self.posdao_transition.map_or(
+			false,
+			|block_num| block_num <= block
+		);
+		match self.transact(data, zero_gas_price) {
 			Ok(()) => warn!(target: "engine", "Reported benign validator misbehaviour {}", address),
 			Err(s) => warn!(target: "engine", "Validator {} could not be reported {}", address, s),
 		}
 	}
 
-	fn register_client(&self, client: Weak<EngineClient>) {
+	fn register_client(&self, client: Weak<dyn EngineClient>) {
 		self.validators.register_client(client.clone());
 		*self.client.write() = Some(client);
 	}
