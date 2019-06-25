@@ -158,7 +158,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			block_reward_contract_transitions: br_transitions,
 			maximum_uncle_count_transition: p.maximum_uncle_count_transition.map_or(0, Into::into),
 			maximum_uncle_count: p.maximum_uncle_count.map_or(0, Into::into),
-			empty_steps_transition: p.empty_steps_transition.map_or(u64::max_value(), |n| ::std::cmp::max(n.into(), 1)),
+			empty_steps_transition: p.empty_steps_transition.map_or(u64::max_value(), |n| cmp::max(n.into(), 1)),
 			maximum_empty_steps: p.maximum_empty_steps.map_or(0, Into::into),
 			quorum_2_3_transition: p.quorum_2_3_transition.map_or_else(BlockNumber::max_value, Into::into),
 			strict_empty_steps_transition: p.strict_empty_steps_transition.map_or(0, Into::into),
@@ -1390,30 +1390,25 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 	/// Make calls to the randomness and validator set contracts.
 	fn on_prepare_block(&self, block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> {
-		const trace_msg: &str = "calls to POSDAO randomness and validator set contracts";
+		const TRACE_MSG: &str = "calls to POSDAO randomness and validator set contracts";
 		match self.posdao_transition {
 			None => {
-				trace!(target: "engine", "Skipping {}", trace_msg);
+				trace!(target: "engine", "Skipping {}", TRACE_MSG);
 				return Ok(Vec::new());
 			}
 			Some(block_num) => {
 				match block_num.cmp(&block.header().number()) {
 					Ordering::Greater => {
-						trace!(target: "engine", "Delaying {}", trace_msg);
+						trace!(target: "engine", "Delaying {}", TRACE_MSG);
 						return Ok(Vec::new());
 					}
 					Ordering::Equal => {
-						trace!(target: "engine", "Starting {}", trace_msg);
+						info!(target: "engine", "Starting {}", TRACE_MSG);
 						return Ok(Vec::new());
 					}
 					_ => {}
 				}
 			}
-		}
-		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
-		if self.posdao_transition.map_or(true, |block_num| block.header().number() < block_num) {
-			trace!(target: "engine", "Skipping calls to POSDAO randomness and validator set contracts");
-			return Ok(Vec::new());
 		}
 		// Genesis is never a new block, but might as well check.
 		let header = block.header.clone();

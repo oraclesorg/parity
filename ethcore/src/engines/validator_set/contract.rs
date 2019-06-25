@@ -25,6 +25,7 @@ use machine::{AuxiliaryData, Call, EthereumMachine};
 use parking_lot::RwLock;
 use types::BlockNumber;
 use types::ids::BlockId;
+use types::encoded;
 use types::header::Header;
 use types::transaction::{self, Action};
 
@@ -71,14 +72,18 @@ impl ValidatorContract {
 		}
 	}
 
+	fn latest_block_header(&self) -> Result<encoded::Header, ::error::Error> {
+		let client = self.client.read().as_ref().and_then(Weak::upgrade).ok_or("No client!")?;
+		client.block_header(BlockId::Latest).ok_or("No latest block!".into())
+	}
+
 	fn do_report_malicious(
 		&self,
 		address: &Address,
 		block: BlockNumber,
 		proof: Bytes,
 	) -> Result<(), ::error::Error> {
-		let client = self.client.read().as_ref().and_then(Weak::upgrade).ok_or("No client!")?;
-		let latest = client.block_header(BlockId::Latest).ok_or("No latest block!")?;
+		let latest = self.latest_block_header()?;
 		if !self.contains(&latest.parent_hash(), address) {
 			warn!(target: "engine", "Not reporting {} on block {}: Not a validator", address, block);
 			return Ok(());
@@ -87,7 +92,7 @@ impl ValidatorContract {
 		self.validators.queue_report((*address, block, data.clone()));
 		let zero_gas_price = self.posdao_transition.map_or(
 			false,
-			|block_num| block_num <= block
+			|block_num| block_num <= latest.number()
 		);
 		self.transact(data, zero_gas_price)?;
 		warn!(target: "engine", "Reported malicious validator {} at block {}", address, block);
@@ -156,9 +161,21 @@ impl ValidatorSet for ValidatorContract {
 
 	fn report_benign(&self, address: &Address, _set_block: BlockNumber, block: BlockNumber) {
 		let data = validator_report::functions::report_benign::encode_input(*address, block);
+		let latest = self.latest_block_header();
+		let latest_num = if let Ok(header) = latest {
+			header.number()
+		} else {
+			warn!(
+				target: "engine",
+				"Latest block header could not be found for a benign report on {} at block {}",
+				address,
+				block
+			);
+			block
+		};
 		let zero_gas_price = self.posdao_transition.map_or(
 			false,
-			|block_num| block_num <= block
+			|block_num| block_num <= latest_num
 		);
 		match self.transact(data, zero_gas_price) {
 			Ok(()) => warn!(target: "engine", "Reported benign validator misbehaviour {}", address),
