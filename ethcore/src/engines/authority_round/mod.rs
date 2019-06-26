@@ -1330,6 +1330,19 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 	/// Applies the block reward on finalisation of the block.
 	fn on_close_block(&self, block: &mut ExecutedBlock) -> Result<(), Error> {
+		const TRACE_MSG: &str = "calls to POSDAO randomness and validator set contracts";
+		if let Some(block_num) = self.posdao_transition {
+			match block_num.cmp(&block.header().number()) {
+				Ordering::Greater => {
+					trace!(target: "engine", "Postponing {}", TRACE_MSG);
+				}
+				Ordering::Equal => {
+					info!(target: "engine", "Starting {}", TRACE_MSG);
+				}
+				_ => {}
+			}
+		}
+
 		let mut beneficiaries = Vec::new();
 
 		if block.header.number() == self.quorum_2_3_transition {
@@ -1390,25 +1403,10 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 	/// Make calls to the randomness and validator set contracts.
 	fn on_prepare_block(&self, block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> {
-		const TRACE_MSG: &str = "calls to POSDAO randomness and validator set contracts";
-		match self.posdao_transition {
-			None => {
-				trace!(target: "engine", "Skipping {}", TRACE_MSG);
-				return Ok(Vec::new());
-			}
-			Some(block_num) => {
-				match block_num.cmp(&block.header().number()) {
-					Ordering::Greater => {
-						trace!(target: "engine", "Delaying {}", TRACE_MSG);
-						return Ok(Vec::new());
-					}
-					Ordering::Equal => {
-						info!(target: "engine", "Starting {}", TRACE_MSG);
-						return Ok(Vec::new());
-					}
-					_ => {}
-				}
-			}
+		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
+		if self.posdao_transition.map_or(true, |block_num| block.header().number() < block_num) {
+			trace!(target: "engine", "Skipping calls to POSDAO randomness and validator set contracts");
+			return Ok(Vec::new());
 		}
 		// Genesis is never a new block, but might as well check.
 		let header = block.header.clone();
