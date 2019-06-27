@@ -79,8 +79,9 @@ impl HoneyBadgerBFT {
 				let options = client
 					.hbbft_options()
 					.expect("hbbft options are expected to exist");
-				let net_info = HoneyBadgerBFT::new_network_info(options)
-					.expect("hbbft parameter deserialization is expected to succeed");
+				let net_info = HoneyBadgerBFT::new_network_info(options).expect(
+					"hbbft arguments could not be deserialized from the parity configuration file",
+				);
 				let mut builder: HoneyBadgerBuilder<Contribution, _> =
 					HoneyBadger::builder(Arc::new(net_info.clone()));
 				*self.network_info.write() = Some(net_info);
@@ -91,6 +92,8 @@ impl HoneyBadgerBFT {
 	}
 
 	fn process_output(&self, client: &Arc<EngineClient>, output: Vec<Batch>) {
+		/// TODO: Multiple outputs are possible,
+		///       process all outputs, respecting their epoch context.
 		let batch = match output.first() {
 			None => return,
 			Some(batch) => batch,
@@ -165,7 +168,7 @@ impl HoneyBadgerBFT {
 								client.send_consensus_message(ser.clone(), *peer_id);
 							}
 						} else {
-							panic!("Network Info needs to be initialized when dispatching hbbft consensus messages");
+							panic!("Network Info expected to be initialized");
 						}
 					}
 				}
