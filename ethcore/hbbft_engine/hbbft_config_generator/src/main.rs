@@ -1,47 +1,139 @@
 extern crate clap;
+extern crate ethcore;
 extern crate hbbft;
 extern crate rand;
 extern crate serde;
 extern crate toml;
-extern crate ethcore;
 
 use clap::{App, Arg};
-use hbbft::crypto::{serde_impl::SerdeSecret};
+use hbbft::crypto::serde_impl::SerdeSecret;
 use hbbft::NetworkInfo;
 use serde::Serialize;
 use std::fs;
 use toml::{map::Map, Value};
 
-fn to_toml<N>(net_info: &NetworkInfo<N>) -> Value
+fn to_toml_array(vec: Vec<&str>) -> Value {
+	Value::Array(vec.iter().map(|s| Value::String(s.to_string())).collect())
+}
+
+fn to_toml<N>(net_info: &NetworkInfo<N>, i: usize) -> Value
 where
 	N: hbbft::NodeIdT + Serialize,
 {
-	let mut server = Map::new();
+	let base_port = 30300i64;
+	let base_rpc_port = 8540i64;
+	let base_ws_port = 9540i64;
 
+	let mut parity = Map::new();
+	parity.insert(
+		"chain".into(),
+		Value::String("./parity-data/spec.json".into()),
+	);
+	let node_data_path = format!("parity-data/node{}", i);
+	parity.insert("base_path".into(), Value::String(node_data_path));
+
+	let mut ui = Map::new();
+	ui.insert("disable".into(), Value::Boolean(true));
+
+	let mut network = Map::new();
+	network.insert("port".into(), Value::Integer(base_port + i as i64));
+	network.insert("nat".into(), Value::String("none".into()));
+	network.insert("interface".into(), Value::String("local".into()));
+	network.insert(
+		"reserved_peers".into(),
+		Value::String("parity-data/reserved-peers".into()),
+	);
+
+	let mut rpc = Map::new();
+	rpc.insert("cors".into(), Value::String("all".into()));
+	rpc.insert("hosts".into(), Value::String("all".into()));
+	let apis = to_toml_array(vec![
+		"web3",
+		"eth",
+		"pubsub",
+		"net",
+		"parity",
+		"parity_set",
+		"parity_pubsub",
+		"personal",
+		"traces",
+		"rpc",
+		"shh",
+		"shh_pubsub",
+	]);
+	rpc.insert("apis".into(), apis);
+	rpc.insert("port".into(), Value::Integer(base_rpc_port + i as i64));
+
+	let mut websockets = Map::new();
+	websockets.insert("interface".into(), Value::String("all".into()));
+	websockets.insert("origins".into(), to_toml_array(vec!["all"]));
+	websockets.insert("port".into(), Value::Integer(base_ws_port + i as i64));
+
+	let mut ipc = Map::new();
+	ipc.insert("disable".into(), Value::Boolean(true));
+
+	let mut secretstore = Map::new();
+	secretstore.insert("disable".into(), Value::Boolean(true));
+
+	let mut ipfs = Map::new();
+	ipfs.insert("enable".into(), Value::Boolean(false));
+
+	let mut account = Map::new();
+	account.insert(
+		"unlock".into(),
+		to_toml_array(vec![
+			"0xbbcaa8d48289bb1ffcf9808d9aa4b1d215054c78",
+			"0x32e4e4c7c5d1cea5db5f9202a9e4d99e56c91a24",
+		]),
+	);
+	account.insert("password".into(), to_toml_array(vec!["config/password"]));
+
+	let mut mining = Map::new();
 	// Write Node ID
 	let our_id_serialized = serde_json::to_string(&net_info.our_id()).unwrap();
-	server.insert("hbbft_our_id".into(), Value::String(our_id_serialized));
+	mining.insert("hbbft_our_id".into(), Value::String(our_id_serialized));
 
 	// Write the Secret Key Share
 	let wrapper = SerdeSecret(net_info.secret_key_share().unwrap());
 	let sks_serialized = serde_json::to_string(&wrapper).unwrap();
-	server.insert("hbbft_secret_share".into(), Value::String(sks_serialized));
+	mining.insert("hbbft_secret_share".into(), Value::String(sks_serialized));
 
 	// Write the Secret Key
 	let wrapper = SerdeSecret(net_info.secret_key());
 	let sk_serialized = serde_json::to_string(&wrapper).unwrap();
-	server.insert("hbbft_secret_key".into(), Value::String(sk_serialized));
+	mining.insert("hbbft_secret_key".into(), Value::String(sk_serialized));
 
 	// Write the Public Key Set
 	let pks_serialized = serde_json::to_string(net_info.public_key_set()).unwrap();
-	server.insert("hbbft_public_key_set".into(), Value::String(pks_serialized));
+	mining.insert("hbbft_public_key_set".into(), Value::String(pks_serialized));
 
 	// Write the Public Keys
 	let pk_serialized = serde_json::to_string(net_info.public_key_map()).unwrap();
-	server.insert("hbbft_public_keys".into(), Value::String(pk_serialized));
+	mining.insert("hbbft_public_keys".into(), Value::String(pk_serialized));
+
+	mining.insert("force_sealing".into(), Value::Boolean(true));
+	mining.insert("min_gas_price".into(), Value::Integer(1000000000));
+	mining.insert("reseal_on_txs".into(), Value::String("none".into()));
+	mining.insert("extra_data".into(), Value::String("Parity".into()));
+
+	let mut misc = Map::new();
+	misc.insert(
+		"logging".into(),
+		Value::String("engine=trace,miner=trace,reward=trace".into()),
+	);
 
 	let mut map = Map::new();
-	map.insert("mining".into(), Value::Table(server));
+	map.insert("parity".into(), Value::Table(parity));
+	map.insert("ui".into(), Value::Table(ui));
+	map.insert("network".into(), Value::Table(network));
+	map.insert("rpc".into(), Value::Table(rpc));
+	map.insert("websockets".into(), Value::Table(websockets));
+	map.insert("ipc".into(), Value::Table(ipc));
+	map.insert("secretstore".into(), Value::Table(secretstore));
+	map.insert("ipfs".into(), Value::Table(ipfs));
+	map.insert("account".into(), Value::Table(account));
+	map.insert("mining".into(), Value::Table(mining));
+	map.insert("misc".into(), Value::Table(misc));
 	Value::Table(map)
 }
 
@@ -72,7 +164,7 @@ fn main() {
 	for (i, (_, info)) in net_infos.iter().enumerate() {
 		let file_name = format!("hbbft_validator_{}.toml", i);
 		let toml_string =
-			toml::to_string(&to_toml(info)).expect("TOML string generation should succeed");
+			toml::to_string(&to_toml(info, i)).expect("TOML string generation should succeed");
 		fs::write(file_name, toml_string).expect("Unable to write config file");
 	}
 }
@@ -80,10 +172,10 @@ fn main() {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use rand;
-	use std::collections::BTreeMap;
-	use serde::Deserialize;
 	use hbbft::crypto::{PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
+	use rand;
+	use serde::Deserialize;
+	use std::collections::BTreeMap;
 
 	#[derive(Deserialize)]
 	struct TomlHbbftOptions {
@@ -125,9 +217,6 @@ mod tests {
 		let net_info = net_infos.get(&0).unwrap();
 
 		let toml_string = toml::to_string(&to_toml(&net_info)).unwrap();
-
-		// For debugging toml output:
-		//println!("{}", toml_string);
 
 		let config: TomlHbbftOptions = toml::from_str(&toml_string).unwrap();
 		compare(net_info, &config);

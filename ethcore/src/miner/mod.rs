@@ -61,7 +61,7 @@ pub struct HbbftOptions {
 	pub hbbft_secret_share: String,
 	/// The secret key of this hbbft validator.
 	pub hbbft_secret_key: String,
-	/// Threshold Cryptography public keys.
+	/// Threshold Cryptography public key shares.
 	pub hbbft_public_key_set: String,
 	/// The public keys of all hbbft validators.
 	pub hbbft_public_keys: String,
