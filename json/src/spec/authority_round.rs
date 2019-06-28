@@ -22,13 +22,6 @@ use uint::Uint;
 use bytes::Bytes;
 use super::{StepDuration, ValidatorSet};
 
-#[derive(Debug, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum ConsensusKind {
-	Poa,
-	Pos,
-}
-
 /// Authority params deserialization.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
