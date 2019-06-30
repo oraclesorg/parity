@@ -25,10 +25,7 @@ where
 	let base_ws_port = 9540i64;
 
 	let mut parity = Map::new();
-	parity.insert(
-		"chain".into(),
-		Value::String("./parity-data/spec.json".into()),
-	);
+	parity.insert("chain".into(), Value::String("./spec/spec.json".into()));
 	let node_data_path = format!("parity-data/node{}", i);
 	parity.insert("base_path".into(), Value::String(node_data_path));
 
@@ -45,8 +42,8 @@ where
 	);
 
 	let mut rpc = Map::new();
-	rpc.insert("cors".into(), Value::String("all".into()));
-	rpc.insert("hosts".into(), Value::String("all".into()));
+	rpc.insert("cors".into(), to_toml_array(vec!["all"]));
+	rpc.insert("hosts".into(), to_toml_array(vec!["all"]));
 	let apis = to_toml_array(vec![
 		"web3",
 		"eth",
@@ -162,9 +159,10 @@ fn main() {
 		.expect("NetworkInfo generation expected to succeed");
 
 	for (i, (_, info)) in net_infos.iter().enumerate() {
-		let file_name = format!("hbbft_validator_{}.toml", i);
+		// Note: node 0 is a regular full node (not a validator) in the testnet setup, so we start at index 1.
+		let file_name = format!("hbbft_validator_{}.toml", i + 1);
 		let toml_string =
-			toml::to_string(&to_toml(info, i)).expect("TOML string generation should succeed");
+			toml::to_string(&to_toml(info, i + 1)).expect("TOML string generation should succeed");
 		fs::write(file_name, toml_string).expect("Unable to write config file");
 	}
 }
