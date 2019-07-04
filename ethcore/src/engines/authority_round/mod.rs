@@ -45,7 +45,6 @@ use itertools::{self, Itertools};
 use rlp::{encode, Decodable, DecoderError, Encodable, RlpStream, Rlp};
 use ethereum_types::{H256, H520, Address, U128, U256};
 use parking_lot::{Mutex, RwLock};
-use tx_filter::transact_acl_gas_price;
 use types::BlockNumber;
 use types::ancestry_action::AncestryAction;
 use types::header::{Header, ExtendedHeader};
@@ -54,6 +53,8 @@ use unexpected::{Mismatch, OutOfBounds};
 
 #[cfg(not(time_checked_add))]
 use time_utils::CheckedSystemTime;
+
+use_contract!(block_gas_limit, "res/contracts/block_gas_limit.json");
 
 mod finality;
 mod randomness;
@@ -1791,6 +1792,8 @@ impl Engine<EthereumMachine> for AuthorityRound {
 	}
 
 	fn gas_limit_override(&self, header: &Header) -> Option<U256> {
+		let (_, &address) = self.machine.params().block_gas_limit_contract.range(..header.number()).last()?;
+
 		let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
 			Some(client) => client,
 			None => {
@@ -1806,15 +1809,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			}
 		};
 
-		let address = match self.machine.tx_filter() {
-			Some(tx_filter) => *tx_filter.contract_address(),
-			None => {
-				debug!(target: "engine", "No transaction filter configured. Not changing the block gas limit.");
-				return None;
-			}
-		};
-
-		let (data, decoder) = transact_acl_gas_price::functions::block_gas_limit::call();
+		let (data, decoder) = block_gas_limit::functions::block_gas_limit::call();
 		let value = full_client.call_contract_before(header, address, data).map_err(|err| {
 			error!(target: "engine", "Failed to call blockGasLimit. Not changing the block gas limit. {:?}", err);
 		}).ok()?;
