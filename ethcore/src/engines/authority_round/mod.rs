@@ -19,6 +19,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::{cmp::{self, Ordering}, fmt};
 use std::iter::{self, FromIterator};
+use std::mem;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Weak, Arc};
@@ -821,7 +822,7 @@ impl AuthorityRound {
 				randomness_contract_address: our_params.randomness_contract_address,
 				posdao_transition: our_params.posdao_transition,
 				block_gas_limit_contract_transitions: our_params.block_gas_limit_contract_transitions,
-				received_block_hashes: RwLock::new(BTreeMap::new()),
+				received_block_hashes: RwLock::new(Default::default()),
 			});
 
 		// Do not initialize timeouts for tests.
@@ -1530,7 +1531,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
 			Err(EngineError::DoubleVote(*header.author()))?;
 		}
-		// Ensure that the same validator did not produce other sibling blocks in the same step.
+		// Report malice the same validator did not produce other sibling blocks in the same step.
 		let received_block_key = (header.number(), header.author().clone());
 		let new_hash = header.hash();
 		if let Some(old_hash) = self
@@ -1541,10 +1542,29 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			if &new_hash != old_hash {
 				trace!(target: "engine", "Validator {} produced sibling blocks", header.author());
 				self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
-				Err(EngineError::SiblingBlocks(*header.author()))?;
 			}
+		} else {
+			self.received_block_hashes.write().insert(received_block_key, new_hash);
 		}
-		self.received_block_hashes.write().insert(received_block_key, new_hash);
+		let client = self.client.read().as_ref().and_then(|weak| weak.upgrade()).ok_or_else(|| {
+			debug!(target: "engine", "Unable to verify block: missing client ref.");
+			EngineError::RequiresClient
+		})?;
+		let full_client = client.as_full_client()
+			.ok_or(EngineError::FailedSystemCall("Failed to upgrade to BlockchainClient.".to_string()))?;
+		// Remove older records.
+		let oldest_block_number = full_client.best_block_header().number().saturating_sub(100);
+		let keys_to_remove: Vec<_> = self
+			.received_block_hashes
+			.read()
+			.iter()
+			.map(|(k, _)| k)
+			.filter(|(n, _)| *n < oldest_block_number)
+			.cloned()
+			.collect();
+		for k in keys_to_remove {
+			self.received_block_hashes.write().remove(&k);
+		}
 
 		// If empty step messages are enabled we will validate the messages in the seal, missing messages are not
 		// reported as there's no way to tell whether the empty step message was never sent or simply not included.
