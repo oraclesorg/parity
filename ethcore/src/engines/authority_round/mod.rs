@@ -545,6 +545,8 @@ pub struct AuthorityRound {
 	posdao_transition: Option<BlockNumber>,
 	/// The addresses of a contracts that determine the block gas limit.
 	block_gas_limit_contract_transitions: BTreeMap<u64, Address>,
+	/// History of block hashes recently received from peers.
+	received_block_hashes: RwLock<BTreeMap<(u64, Address), H256>>,
 }
 
 // header-chain validator.
@@ -819,6 +821,7 @@ impl AuthorityRound {
 				randomness_contract_address: our_params.randomness_contract_address,
 				posdao_transition: our_params.posdao_transition,
 				block_gas_limit_contract_transitions: our_params.block_gas_limit_contract_transitions,
+				received_block_hashes: RwLock::new(BTreeMap::new()),
 			});
 
 		// Do not initialize timeouts for tests.
@@ -1527,6 +1530,21 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
 			Err(EngineError::DoubleVote(*header.author()))?;
 		}
+		// Ensure that the same validator did not produce other sibling blocks in the same step.
+		let received_block_key = (header.number(), header.author().clone());
+		let new_hash = header.hash();
+		if let Some(old_hash) = self
+			.received_block_hashes
+			.read()
+			.get(&received_block_key)
+		{
+			if &new_hash != old_hash {
+				trace!(target: "engine", "Validator {} produced sibling blocks", header.author());
+				self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
+				Err(EngineError::SiblingBlocks(*header.author()))?;
+			}
+		}
+		self.received_block_hashes.write().insert(received_block_key, new_hash);
 
 		// If empty step messages are enabled we will validate the messages in the seal, missing messages are not
 		// reported as there's no way to tell whether the empty step message was never sent or simply not included.

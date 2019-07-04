@@ -71,6 +71,8 @@ pub enum EngineError {
 	NotAuthorized(Address),
 	/// The same author issued different votes at the same step.
 	DoubleVote(Address),
+	/// The same author issued sibling blocks.
+	SiblingBlocks(Address),
 	/// The received block is from an incorrect proposer.
 	NotProposer(Mismatch<Address>),
 	/// Message was not expected.
@@ -135,6 +137,7 @@ impl fmt::Display for EngineError {
 			CliqueTooRecentlySigned(ref address) => format!("The signer: {} has signed a block too recently", address),
 			Custom(ref s) => s.clone(),
 			DoubleVote(ref address) => format!("Author {} issued too many blocks.", address),
+			SiblingBlocks(ref address) => format!("Author {} issued sibling blocks.", address),
 			NotProposer(ref mis) => format!("Author is not a current proposer: {}", mis),
 			NotAuthorized(ref address) => format!("Signer {} is not authorized.", address),
 			UnexpectedMessage => "This Engine should not be fed messages.".into(),
