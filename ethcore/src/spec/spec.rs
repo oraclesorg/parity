@@ -79,6 +79,8 @@ pub struct CommonParams {
 	pub subprotocol_name: String,
 	/// Minimum gas limit.
 	pub min_gas_limit: U256,
+	/// The address of a contract that determines the block gas limit.
+	pub block_gas_limit_contract: BTreeMap<BlockNumber, Address>,
 	/// Fork block to check.
 	pub fork_block: Option<(BlockNumber, H256)>,
 	/// EIP150 transition block number.
@@ -267,6 +269,7 @@ impl From<ethjson::spec::Params> for CommonParams {
 			},
 			subprotocol_name: p.subprotocol_name.unwrap_or_else(|| "eth".to_owned()),
 			min_gas_limit: p.min_gas_limit.into(),
+			block_gas_limit_contract: p.block_gas_limit_contract.map(|bglc| bglc.into()).unwrap_or_default(),
 			fork_block: if let (Some(n), Some(h)) = (p.fork_block, p.fork_hash) {
 				Some((n.into(), h.into()))
 			} else {

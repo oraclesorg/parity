@@ -53,6 +53,8 @@ use types::header::{Header, ExtendedHeader};
 use types::transaction::{Action, SignedTransaction};
 use unexpected::{Mismatch, OutOfBounds};
 
+use_contract!(block_gas_limit, "res/contracts/block_gas_limit.json");
+
 mod finality;
 mod randomness;
 pub(crate) mod util;
@@ -1797,6 +1799,8 @@ impl Engine<EthereumMachine> for AuthorityRound {
 	}
 
 	fn gas_limit_override(&self, header: &Header) -> Option<U256> {
+		let (_, &address) = self.machine.params().block_gas_limit_contract.range(..header.number()).last()?;
+
 		let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
 			Some(client) => client,
 			None => {
@@ -1812,15 +1816,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			}
 		};
 
-		let address = match self.machine.tx_filter() {
-			Some(tx_filter) => *tx_filter.contract_address(),
-			None => {
-				debug!(target: "engine", "No transaction filter configured. Not changing the block gas limit.");
-				return None;
-			}
-		};
-
-		let (data, decoder) = transact_acl_gas_price::functions::block_gas_limit::call();
+		let (data, decoder) = block_gas_limit::functions::block_gas_limit::call();
 		let value = full_client.call_contract_before(header, address, data).map_err(|err| {
 			error!(target: "engine", "Failed to call blockGasLimit. Not changing the block gas limit. {:?}", err);
 		}).ok()?;
