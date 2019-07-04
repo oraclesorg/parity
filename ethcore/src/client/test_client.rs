@@ -523,7 +523,10 @@ impl BlockInfo for TestBlockChainClient {
 
 impl CallContract for TestBlockChainClient {
 	fn call_contract(&self, _id: BlockId, _address: Address, _data: Bytes) -> Result<Bytes, String> { Ok(vec![]) }
-	fn call_contract_at(&self, header: &Header, address: Address, data: Bytes) -> Result<Bytes, String> { Ok(vec![]) }
+
+	fn call_contract_before(&self, _header: &Header, _address: Address, _data: Bytes) -> Result<Bytes, String> {
+		Ok(vec![])
+	}
 }
 
 impl TransactionInfo for TestBlockChainClient {
