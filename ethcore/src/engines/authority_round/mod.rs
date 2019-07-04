@@ -1109,7 +1109,8 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 		let score = calculate_score(parent_step, current_step, current_empty_steps_len);
 		header.set_difficulty(score);
-		if let Some(gas_limit) = self.gas_limit_override(parent) {
+		if let Some(gas_limit) = self.gas_limit_override(header) {
+			trace!(target: "engine", "Setting gas limit to {} for block {}.", gas_limit, header.number());
 			header.set_gas_limit(gas_limit);
 		}
 	}
@@ -1789,39 +1790,40 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		finalized.into_iter().map(AncestryAction::MarkFinalized).collect()
 	}
 
-	fn gas_limit_override(&self, parent: &Header) -> Option<U256> {
-		// TODO: Use target gas limit? Must exactly agree in all nodes!
-		let default_gas_limit = 10_000_000.into();
+	fn gas_limit_override(&self, header: &Header) -> Option<U256> {
 		let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
 			Some(client) => client,
 			None => {
 				debug!(target: "engine", "Unable to prepare block: missing client ref.");
-				return Some(default_gas_limit);
+				return None;
 			}
 		};
 		let full_client = match client.as_full_client() {
 			Some(full_client) => full_client,
 			None => {
 				debug!(target: "engine", "Failed to upgrade to BlockchainClient.");
-				return Some(default_gas_limit);
+				return None;
 			}
 		};
 
 		let address = match self.machine.tx_filter() {
 			Some(tx_filter) => *tx_filter.contract_address(),
 			None => {
-				debug!(target: "engine", "Not transaction filter configured. Not changing the block gas limit.");
-				return Some(default_gas_limit);
+				debug!(target: "engine", "No transaction filter configured. Not changing the block gas limit.");
+				return None;
 			}
 		};
 
-		let (data, decoder) = transact_acl_gas_price::functions::limit_block_gas::call();
-		match full_client.call_contract_at(parent, address, data).ok().and_then(|value| decoder.decode(&value).ok()) {
-			Some(true) => return Some(2_000_000.into()),
-			Some(false) => (),
-			None => debug!(target: "engine", "Failed to call limitBlockGas."),
-		};
-		Some(default_gas_limit)
+		let (data, decoder) = transact_acl_gas_price::functions::block_gas_limit::call();
+		let value = full_client.call_contract_before(header, address, data).map_err(|err| {
+			error!(target: "engine", "Failed to call blockGasLimit. Not changing the block gas limit. {:?}", err);
+		}).ok()?;
+		if value.is_empty() {
+			debug!(target: "engine", "blockGasLimit returned nothing. Not changing the block gas limit.");
+			None
+		} else {
+			decoder.decode(&value).ok()
+		}
 	}
 }
 

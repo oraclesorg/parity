@@ -44,11 +44,11 @@
 	{
 		"constant": true,
 		"inputs": [],
-		"name": "limitBlockGas",
+		"name": "blockGasLimit",
 		"outputs": [
 			{
 				"name": "",
-				"type": "bool"
+				"type": "uint256"
 			}
 		],
 		"payable": false,
