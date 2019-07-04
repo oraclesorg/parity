@@ -79,21 +79,22 @@ impl HoneyBadgerBFT {
 				let options = client
 					.hbbft_options()
 					.expect("hbbft options are expected to exist");
-				let net_info = HoneyBadgerBFT::new_network_info(options).expect(
-					"hbbft arguments could not be deserialized from the parity configuration file",
-				);
-				let mut builder: HoneyBadgerBuilder<Contribution, _> =
-					HoneyBadger::builder(Arc::new(net_info.clone()));
-				*self.network_info.write() = Some(net_info);
-				return Some(builder.build());
+				if let Some(net_info) = HoneyBadgerBFT::new_network_info(options) {
+					let mut builder: HoneyBadgerBuilder<Contribution, _> =
+						HoneyBadger::builder(Arc::new(net_info.clone()));
+					*self.network_info.write() = Some(net_info);
+					return Some(builder.build());
+				} else {
+					return None;
+				}
 			}
 		}
 		None
 	}
 
 	fn process_output(&self, client: &Arc<EngineClient>, output: Vec<Batch>) {
-		/// TODO: Multiple outputs are possible,
-		///       process all outputs, respecting their epoch context.
+		// TODO: Multiple outputs are possible,
+		//       process all outputs, respecting their epoch context.
 		let batch = match output.first() {
 			None => return,
 			Some(batch) => batch,
@@ -237,8 +238,7 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		if let Some(honey_badger) = self.new_honey_badger() {
 			*self.honey_badger.write() = Some(honey_badger);
 		} else {
-			error!(target: "engine", "HoneyBadger algorithm could not be created!");
-			panic!("HoneyBadger algorithm could not be created!");
+			info!(target: "engine", "HoneyBadger algorithm could not be created - running as regular node");
 		}
 	}
 
