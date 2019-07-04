@@ -282,10 +282,13 @@ pub fn verify_header_params(header: &Header, engine: &EthEngine, is_full: bool, 
 	if header.gas_used() > header.gas_limit() {
 		return Err(From::from(BlockError::TooMuchGasUsed(OutOfBounds { max: Some(*header.gas_limit()), min: None, found: *header.gas_used() })));
 	}
-	// TODO: This should be called with the _parent_ instead, and the value should be checked.
-	// Alternatively, only check in `verify_parent` below, and add another function to the engine that returns `true` if
-	// the engine uses a gas limit override.
-	if engine.gas_limit_override(header).is_none() {
+	if let Some(gas_limit) = engine.gas_limit_override(header) {
+		if *header.gas_limit() != gas_limit {
+			return Err(From::from(BlockError::InvalidGasLimit(
+				OutOfBounds { min: Some(gas_limit), max: Some(gas_limit), found: *header.gas_limit() }
+			)));
+		}
+	} else {
 		let min_gas_limit = engine.params().min_gas_limit;
 		if header.gas_limit() < &min_gas_limit {
 			return Err(From::from(BlockError::InvalidGasLimit(OutOfBounds { min: Some(min_gas_limit), max: None, found: *header.gas_limit() })));
@@ -350,13 +353,7 @@ fn verify_parent(header: &Header, parent: &Header, engine: &EthEngine) -> Result
 		return Err(BlockError::RidiculousNumber(OutOfBounds { min: Some(1), max: None, found: header.number() }).into());
 	}
 
-	if let Some(gas_limit) = engine.gas_limit_override(parent) {
-		if *header.gas_limit() != gas_limit {
-			return Err(From::from(BlockError::InvalidGasLimit(
-				OutOfBounds { min: Some(gas_limit), max: Some(gas_limit), found: *header.gas_limit() }
-			)));
-		}
-	} else {
+	if engine.gas_limit_override(header).is_none() {
 		let gas_limit_divisor = engine.params().gas_limit_bound_divisor;
 		let parent_gas_limit = *parent.gas_limit();
 		let min_gas = parent_gas_limit - parent_gas_limit / gas_limit_divisor;

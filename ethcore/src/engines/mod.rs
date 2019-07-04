@@ -498,7 +498,7 @@ pub trait Engine<M: Machine>: Sync + Send {
 
 	/// Overrides the block gas limit. Whenever this returns `Some` for a header, the next block's gas limit must be
 	/// exactly that value.
-	fn gas_limit_override(&self, parent: &Header) -> Option<U256> {
+	fn gas_limit_override(&self, _header: &Header) -> Option<U256> {
 		None
 	}
 }
