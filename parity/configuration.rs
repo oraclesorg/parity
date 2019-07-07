@@ -448,6 +448,7 @@ impl Configuration {
 			hbbft_secret_key: self.args.arg_hbbft_secret_key.clone(),
 			hbbft_public_key_set: self.args.arg_hbbft_public_key_set.clone(),
 			hbbft_public_keys: self.args.arg_hbbft_public_keys.clone(),
+			hbbft_validator_ip_addresses: self.args.arg_hbbft_validator_ip_addresses.clone(),
 		};
 
 		Ok(extras)

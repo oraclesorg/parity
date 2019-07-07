@@ -65,6 +65,8 @@ pub struct HbbftOptions {
 	pub hbbft_public_key_set: String,
 	/// The public keys of all hbbft validators.
 	pub hbbft_public_keys: String,
+	/// The IP addresses/ports of all hbbft validators.
+	pub hbbft_validator_ip_addresses: String,
 }
 
 /// Provides methods to verify incoming external transactions

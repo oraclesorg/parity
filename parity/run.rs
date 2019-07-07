@@ -521,6 +521,7 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 		hbbft_secret_key: cmd.miner_extras.hbbft_secret_key.unwrap_or("".into()),
 		hbbft_public_key_set: cmd.miner_extras.hbbft_public_key_set.unwrap_or("".into()),
 		hbbft_public_keys: cmd.miner_extras.hbbft_public_keys.unwrap_or("".into()),
+		hbbft_validator_ip_addresses: cmd.miner_extras.hbbft_validator_ip_addresses.unwrap_or("".into()),
 	});
 
 	if !cmd.miner_extras.work_notify.is_empty() {

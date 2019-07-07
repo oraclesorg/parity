@@ -49,6 +49,8 @@ mod tests {
 	use hbbft_testing::proptest::{gen_seed, TestRng, TestRngSeed};
 	use proptest::{prelude::ProptestConfig, proptest};
 	use rand::{Rng, SeedableRng};
+	use std::collections::BTreeMap;
+	use std::ops::Range;
 
 	proptest! {
 		#![proptest_config(ProptestConfig {
@@ -74,18 +76,28 @@ mod tests {
 		}
 	}
 
+	fn generate_ip_addresses(ids: Range<usize>) -> BTreeMap<usize, String> {
+		let mut map = BTreeMap::new();
+		for n in ids.into_iter() {
+			let id = format!("{}", n);
+			map.insert(n, id);
+		}
+		map
+	}
+
 	fn do_test_miner_transaction_injection(seed: TestRngSeed) {
 		super::init();
 
 		let mut rng = TestRng::from_seed(seed);
 		let net_infos = NetworkInfo::generate_map(0..1usize, &mut rng)
 			.expect("NetworkInfo generation is expected to always succeed");
+		let ips_map = generate_ip_addresses(0..1usize);
 
 		let net_info = net_infos
 			.get(&0)
 			.expect("A NetworkInfo must exist for node 0");
 
-		let test_data = hbbft_client_setup(net_info.clone());
+		let test_data = hbbft_client_setup(net_info.clone(), &ips_map);
 
 		// Verify that we actually start at block 0.
 		assert_eq!(test_data.client.chain().best_block_number(), 0);
@@ -107,10 +119,11 @@ mod tests {
 	fn test_with_size<R: Rng>(rng: &mut R, size: usize) {
 		let net_infos = NetworkInfo::generate_map(0..size, rng)
 			.expect("NetworkInfo generation to always succeed");
+		let ips_map = generate_ip_addresses(0..size);
 
 		let nodes: Vec<_> = net_infos
 			.into_iter()
-			.map(|(_, netinfo)| hbbft_client_setup(netinfo))
+			.map(|(_, netinfo)| hbbft_client_setup(netinfo, &ips_map))
 			.collect();
 
 		for n in &nodes {

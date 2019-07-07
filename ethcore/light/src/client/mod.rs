@@ -48,9 +48,6 @@ use cache::Cache;
 
 pub use self::service::Service;
 
-// Temporary dependency directly on hbbft to access the NetworkInfo struct
-use hbbft::NetworkInfo;
-
 mod header_chain;
 mod service;
 

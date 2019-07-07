@@ -1,7 +1,3 @@
-use std::sync::Arc;
-
-use rustc_hex::FromHex;
-
 use ethcore::client::Client;
 use ethcore::engines::signer::from_keypair;
 use ethcore::miner::HbbftOptions;
@@ -14,6 +10,9 @@ use ethkey::{Generator, Random};
 use hash::keccak;
 use hbbft::crypto::serde_impl::SerdeSecret;
 use hbbft::NetworkInfo;
+use rustc_hex::FromHex;
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use types::transaction::{Action, SignedTransaction, Transaction};
 
 pub fn hbbft_spec() -> Spec {
@@ -34,7 +33,10 @@ pub struct HbbftTestData {
 	pub miner: Arc<Miner>,
 }
 
-fn serialize_netinfo(net_info: NetworkInfo<usize>) -> HbbftOptions {
+fn serialize_netinfo(
+	net_info: NetworkInfo<usize>,
+	ips_map: &BTreeMap<usize, String>,
+) -> HbbftOptions {
 	let hbbft_our_id = serde_json::to_string(&net_info.our_id()).unwrap();
 
 	let wrapper = SerdeSecret(net_info.secret_key_share().unwrap());
@@ -46,21 +48,27 @@ fn serialize_netinfo(net_info: NetworkInfo<usize>) -> HbbftOptions {
 	let hbbft_public_key_set = serde_json::to_string(net_info.public_key_set()).unwrap();
 	let hbbft_public_keys = serde_json::to_string(net_info.public_key_map()).unwrap();
 
+	let hbbft_validator_ip_addresses = serde_json::to_string(ips_map).unwrap();
+
 	HbbftOptions {
 		hbbft_our_id,
 		hbbft_secret_share,
 		hbbft_secret_key,
 		hbbft_public_key_set,
 		hbbft_public_keys,
+		hbbft_validator_ip_addresses,
 	}
 }
 
-pub fn hbbft_client_setup(net_info: NetworkInfo<usize>) -> HbbftTestData {
+pub fn hbbft_client_setup(
+	net_info: NetworkInfo<usize>,
+	ips_map: &BTreeMap<usize, String>,
+) -> HbbftTestData {
 	let client = hbbft_client();
 
 	// Get miner reference
 	let miner = client.miner();
-	miner.set_hbbft_options(serialize_netinfo(net_info));
+	miner.set_hbbft_options(serialize_netinfo(net_info, ips_map));
 
 	let engine = client.engine();
 	// Set the signer *before* registering the client with the engine.

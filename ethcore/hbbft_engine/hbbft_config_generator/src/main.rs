@@ -9,14 +9,26 @@ use clap::{App, Arg};
 use hbbft::crypto::serde_impl::SerdeSecret;
 use hbbft::NetworkInfo;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fs;
+use std::ops::Range;
 use toml::{map::Map, Value};
+
+fn generate_ip_addresses(ids: Range<usize>) -> BTreeMap<usize, String> {
+	let base_port = 30300usize;
+	let mut map = BTreeMap::new();
+	for (i, n) in ids.into_iter().enumerate() {
+		let ip_address = format!("127.0.0.1:{}", base_port + i + 1);
+		map.insert(n, ip_address);
+	}
+	map
+}
 
 fn to_toml_array(vec: Vec<&str>) -> Value {
 	Value::Array(vec.iter().map(|s| Value::String(s.to_string())).collect())
 }
 
-fn to_toml<N>(net_info: &NetworkInfo<N>, i: usize) -> Value
+fn to_toml<N>(net_info: &NetworkInfo<N>, ips_map: &BTreeMap<N, String>, i: usize) -> Value
 where
 	N: hbbft::NodeIdT + Serialize,
 {
@@ -108,6 +120,13 @@ where
 	let pk_serialized = serde_json::to_string(net_info.public_key_map()).unwrap();
 	mining.insert("hbbft_public_keys".into(), Value::String(pk_serialized));
 
+	// Write the validator IP Addresses
+	let ips_serialized = serde_json::to_string(&ips_map).unwrap();
+	mining.insert(
+		"hbbft_validator_ip_addresses".into(),
+		Value::String(ips_serialized),
+	);
+
 	mining.insert("force_sealing".into(), Value::Boolean(true));
 	mining.insert("min_gas_price".into(), Value::Integer(1000000000));
 	mining.insert("reseal_on_txs".into(), Value::String("none".into()));
@@ -157,12 +176,13 @@ fn main() {
 	let mut rng = rand::thread_rng();
 	let net_infos = NetworkInfo::generate_map(0..num_nodes, &mut rng)
 		.expect("NetworkInfo generation expected to succeed");
+	let ips_map = generate_ip_addresses(0..num_nodes);
 
 	for (i, (_, info)) in net_infos.iter().enumerate() {
 		// Note: node 0 is a regular full node (not a validator) in the testnet setup, so we start at index 1.
 		let file_name = format!("hbbft_validator_{}.toml", i + 1);
-		let toml_string =
-			toml::to_string(&to_toml(info, i + 1)).expect("TOML string generation should succeed");
+		let toml_string = toml::to_string(&to_toml(info, &ips_map, i + 1))
+			.expect("TOML string generation should succeed");
 		fs::write(file_name, toml_string).expect("Unable to write config file");
 	}
 }
@@ -212,9 +232,9 @@ mod tests {
 	fn test_network_info_serde() {
 		let mut rng = rand::thread_rng();
 		let net_infos = NetworkInfo::generate_map(0..1usize, &mut rng).unwrap();
+		let ips_map = generate_ip_addresses(0..1usize);
 		let net_info = net_infos.get(&0).unwrap();
-
-		let toml_string = toml::to_string(&to_toml(&net_info)).unwrap();
+		let toml_string = toml::to_string(&to_toml(&net_info, &ips_map, 0)).unwrap();
 
 		let config: TomlHbbftOptions = toml::from_str(&toml_string).unwrap();
 		compare(net_info, &config);

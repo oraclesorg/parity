@@ -282,6 +282,7 @@ pub struct MinerExtras {
 	pub hbbft_secret_key: Option<String>,
 	pub hbbft_public_key_set: Option<String>,
 	pub hbbft_public_keys: Option<String>,
+	pub hbbft_validator_ip_addresses: Option<String>,
 }
 
 impl Default for MinerExtras {
@@ -298,6 +299,7 @@ impl Default for MinerExtras {
 			hbbft_secret_key: None,
 			hbbft_public_key_set: None,
 			hbbft_public_keys: None,
+			hbbft_validator_ip_addresses: None,
 		}
 	}
 }
