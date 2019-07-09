@@ -19,7 +19,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::{cmp::{self, Ordering}, fmt};
 use std::iter::{self, FromIterator};
-use std::mem;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Weak, Arc};
@@ -1429,6 +1428,26 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 	/// Make calls to the randomness and validator set contracts.
 	fn on_prepare_block(&self, block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> {
+		let client = self.client.read().as_ref().and_then(|weak| weak.upgrade()).ok_or_else(|| {
+			debug!(target: "engine", "Unable to prepare block: missing client ref.");
+			EngineError::RequiresClient
+		})?;
+		let full_client = client.as_full_client()
+			.ok_or_else(|| EngineError::FailedSystemCall("Failed to upgrade to BlockchainClient.".to_string()))?;
+
+		// Remove older block hash records.
+		let oldest_block_number = full_client.best_block_header().number().saturating_sub(100);
+		let keys_to_remove: Vec<_> = self
+			.received_block_hashes
+			.read()
+			.keys()
+			.take_while(|(n, _)| *n < oldest_block_number)
+			.cloned()
+			.collect();
+		for k in keys_to_remove {
+			self.received_block_hashes.write().remove(&k);
+		}
+
 		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
 		if self.posdao_transition.map_or(true, |block_num| block.header.number() < block_num) {
 			trace!(target: "engine", "Skipping calls to POSDAO randomness and validator set contracts");
@@ -1441,12 +1460,6 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			None => return Ok(Vec::new()), // We are not a validator, so we shouldn't call the contracts.
 		};
 		let our_addr = signer.address();
-		let client = self.client.read().as_ref().and_then(|weak| weak.upgrade()).ok_or_else(|| {
-			debug!(target: "engine", "Unable to prepare block: missing client ref.");
-			EngineError::RequiresClient
-		})?;
-		let full_client = client.as_full_client()
-			.ok_or_else(|| EngineError::FailedSystemCall("Failed to upgrade to BlockchainClient.".to_string()))?;
 
 		// Makes a constant contract call.
 		let mut call = |to: Address, data: Bytes| {
@@ -1534,36 +1547,11 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		// Report malice if the validator produced other sibling blocks in the same step.
 		let received_block_key = (header.number(), header.author().clone());
 		let new_hash = header.hash();
-		let old_hash = {
-			let received_block_hashes = self.received_block_hashes.read();
-			received_block_hashes.get(&received_block_key).map(|h| h.clone())
-		};
-		if let Some(old_hash) = old_hash {
-			if new_hash != old_hash {
-				trace!(target: "engine", "Validator {} produced sibling blocks", header.author());
-				self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
-			}
+		if self.received_block_hashes.read().get(&received_block_key).into_iter().any(|h| *h != new_hash) {
+			trace!(target: "engine", "Validator {} produced sibling blocks", header.author());
+			self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
 		} else {
 			self.received_block_hashes.write().insert(received_block_key, new_hash);
-		}
-
-		let client = self.client.read().as_ref().and_then(|weak| weak.upgrade()).ok_or_else(|| {
-			debug!(target: "engine", "Unable to verify block: missing client ref.");
-			EngineError::RequiresClient
-		})?;
-		let full_client = client.as_full_client()
-			.ok_or(EngineError::FailedSystemCall("Failed to upgrade to BlockchainClient.".to_string()))?;
-		// Remove older records.
-		let oldest_block_number = full_client.best_block_header().number().saturating_sub(100);
-		let keys_to_remove: Vec<_> = self
-			.received_block_hashes
-			.read()
-			.keys()
-			.take_while(|(n, _)| *n < oldest_block_number)
-			.cloned()
-			.collect();
-		for k in keys_to_remove {
-			self.received_block_hashes.write().remove(&k);
 		}
 
 		// If empty step messages are enabled we will validate the messages in the seal, missing messages are not
