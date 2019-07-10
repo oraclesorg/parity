@@ -116,6 +116,19 @@ mod tests {
 		assert_eq!(block.transactions_count(), 1);
 	}
 
+	fn crank_network(nodes: &Vec<HbbftTestData>) {
+		for (from, n) in nodes.iter().enumerate() {
+			for m in n.notify.targeted_messages.write().iter() {
+				nodes[m.1]
+					.client
+					.engine()
+					.handle_message(&m.0, from)
+					.expect("message handling to succeed");
+			}
+			n.notify.targeted_messages.write().clear();
+		}
+	}
+
 	fn test_with_size<R: Rng>(rng: &mut R, size: usize) {
 		let net_infos = NetworkInfo::generate_map(0..size, rng)
 			.expect("NetworkInfo generation to always succeed");
@@ -139,16 +152,7 @@ mod tests {
 
 		// Rudimentary network simulation.
 		while nodes.iter().any(has_messages) {
-			for (from, n) in nodes.iter().enumerate() {
-				for m in n.notify.targeted_messages.write().iter() {
-					nodes[m.1]
-						.client
-						.engine()
-						.handle_message(&m.0, from)
-						.expect("message handling to succeed");
-				}
-				n.notify.targeted_messages.write().clear();
-			}
+			crank_network(&nodes);
 		}
 
 		// All nodes need to have produced a block.
