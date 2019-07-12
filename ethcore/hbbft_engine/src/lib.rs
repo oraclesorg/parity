@@ -74,6 +74,12 @@ mod tests {
 		fn test_multiple_clients(seed in gen_seed()) {
 			do_test_multiple_clients(seed)
 		}
+
+		#[test]
+		#[allow(clippy::unnecessary_operation)]
+		fn test_trigger_at_contribution_threshold(seed in gen_seed()) {
+			do_test_trigger_at_contribution_threshold(seed)
+		}
 	}
 
 	fn generate_ip_addresses(ids: Range<usize>) -> BTreeMap<usize, String> {
@@ -83,6 +89,12 @@ mod tests {
 			map.insert(n, id);
 		}
 		map
+	}
+
+	// Returns `true` if the node has not output all transactions yet.
+	// If it has, and has advanced another epoch, it clears all messages for later epochs.
+	fn has_messages(node: &HbbftTestData) -> bool {
+		!node.notify.targeted_messages.read().is_empty()
 	}
 
 	fn do_test_miner_transaction_injection(seed: TestRngSeed) {
@@ -116,7 +128,7 @@ mod tests {
 		assert_eq!(block.transactions_count(), 1);
 	}
 
-	fn crank_network(nodes: &Vec<HbbftTestData>) {
+	fn crank_network_single_step(nodes: &Vec<HbbftTestData>) {
 		for (from, n) in nodes.iter().enumerate() {
 			for m in n.notify.targeted_messages.write().iter() {
 				nodes[m.1]
@@ -126,6 +138,12 @@ mod tests {
 					.expect("message handling to succeed");
 			}
 			n.notify.targeted_messages.write().clear();
+		}
+	}
+
+	fn crank_network(nodes: &Vec<HbbftTestData>) {
+		while nodes.iter().any(has_messages) {
+			crank_network_single_step(nodes);
 		}
 	}
 
@@ -146,14 +164,8 @@ mod tests {
 			inject_transaction(&n.client, &n.miner);
 		}
 
-		// Returns `true` if the node has not output all transactions yet.
-		// If it has, and has advanced another epoch, it clears all messages for later epochs.
-		let has_messages = |node: &HbbftTestData| !node.notify.targeted_messages.read().is_empty();
-
 		// Rudimentary network simulation.
-		while nodes.iter().any(has_messages) {
-			crank_network(&nodes);
-		}
+		crank_network(&nodes);
 
 		// All nodes need to have produced a block.
 		for n in &nodes {
@@ -183,5 +195,49 @@ mod tests {
 		for size in sizes {
 			test_with_size(&mut rng, size);
 		}
+	}
+
+	fn do_test_trigger_at_contribution_threshold(seed: TestRngSeed) {
+		super::init();
+
+		let mut rng = TestRng::from_seed(seed);
+
+		// A network size of 4 allows one adversary.
+		// Other nodes should *not* join the epoch if they receive only
+		// one contribution, but if 2 or more are received they should!
+		let network_size: usize = 4;
+
+		let net_infos = NetworkInfo::generate_map(0..network_size, &mut rng)
+			.expect("NetworkInfo generation is expected to always succeed");
+		let ips_map = generate_ip_addresses(0..network_size);
+
+		let nodes: Vec<_> = net_infos
+			.into_iter()
+			.map(|(_, netinfo)| hbbft_client_setup(netinfo, &ips_map))
+			.collect();
+
+		// Get the first node and send a transaction to it.
+		let first_node = &nodes.iter().nth(0).unwrap();
+		let second_node = &nodes.iter().nth(1).unwrap();
+		//        let third_node = &nodes.iter().nth(2).unwrap();
+		//        let fourth_node = &nodes.iter().nth(3).unwrap();
+		inject_transaction(&first_node.client, &first_node.miner);
+
+		// Crank the network until no node has any input
+		crank_network(&nodes);
+
+		// We expect no new block being generated in this case!
+		assert_eq!(first_node.client.chain().best_block_number(), 0);
+
+		// Get the second node and send a transaction to it.
+		inject_transaction(&second_node.client, &second_node.miner);
+		//        inject_transaction(&third_node.client, &third_node.miner);
+		//        inject_transaction(&fourth_node.client, &fourth_node.miner);
+
+		// Crank the network until no node has any input
+		crank_network(&nodes);
+
+		// This time we do expect a new block has been generated
+		assert_eq!(first_node.client.chain().best_block_number(), 1);
 	}
 }
