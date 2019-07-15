@@ -1456,6 +1456,49 @@ impl CallContract for Client {
 			.map_err(|e| format!("{:?}", e))
 			.map(|executed| executed.output)
 	}
+
+	fn call_contract_before(&self, header: &Header, address: Address, data: Bytes) -> Result<Bytes, String> {
+		let db = self.state_db.read().boxed_clone();
+
+		// early exit for pruned blocks
+		if db.is_pruned() && self.pruning_info().earliest_state > header.number() {
+			return Err(CallError::StatePruned.to_string());
+		}
+
+		let parent = self.chain.read().block_header_data(header.parent_hash()).ok_or_else(|| {
+			error!(target: "client", "Failed to call contract at {:?}'s child", header.parent_hash());
+			format!("Failed to call contract at {:?}'s child", header.parent_hash())
+		})?;
+		let root = parent.state_root();
+		let nonce = self.engine.account_start_nonce(header.number());
+		let mut state = State::from_existing(db, root, nonce, self.factories.clone())
+			.map_err(|_| CallError::StatePruned.to_string())?;
+
+		let from = Address::default();
+		let transaction = transaction::Transaction {
+			nonce: state.nonce(&from).unwrap_or_else(|_| self.engine.account_start_nonce(0)),
+			action: Action::Call(address),
+			gas: U256::from(50_000_000),
+			gas_price: U256::default(),
+			value: U256::default(),
+			data,
+		}.fake_sign(from);
+
+		let env_info = EnvInfo {
+			number: header.number(),
+			author: header.author().clone(),
+			timestamp: header.timestamp(),
+			difficulty: header.difficulty().clone(),
+			last_hashes: self.build_last_hashes(&parent.hash()),
+			gas_used: U256::default(),
+			gas_limit: U256::max_value(),
+		};
+		let machine = self.engine.machine();
+
+		Self::do_virtual_call(&machine, &env_info, &mut state, &transaction, Default::default())
+			.map_err(|e| format!("{:?}", e))
+			.map(|executed| executed.output)
+	}
 }
 
 impl ImportBlock for Client {

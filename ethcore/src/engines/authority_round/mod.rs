@@ -32,7 +32,8 @@ use engines::{Engine, Seal, SealingState, EngineError, ConstructedVerifier};
 use engines::block_reward;
 use engines::block_reward::{BlockRewardContract, RewardKind};
 use error::{Error, ErrorKind, BlockError};
-use ethjson::{spec::StepDuration};
+use ethabi::FunctionOutputDecoder;
+use ethjson::{self, spec::StepDuration};
 use machine::{AuxiliaryData, Call, EthereumMachine};
 use hash::keccak;
 use super::signer::EngineSigner;
@@ -52,6 +53,8 @@ use unexpected::{Mismatch, OutOfBounds};
 
 #[cfg(not(time_checked_add))]
 use time_utils::CheckedSystemTime;
+
+use_contract!(block_gas_limit, "res/contracts/block_gas_limit.json");
 
 mod finality;
 mod randomness;
@@ -1107,6 +1110,14 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 		let score = calculate_score(parent_step, current_step, current_empty_steps_len);
 		header.set_difficulty(score);
+		if let Some(gas_limit) = self.gas_limit_override(header) {
+			trace!(target: "engine", "Setting gas limit to {} for block {}.", gas_limit, header.number());
+			let parent_gas_limit = *parent.gas_limit();
+			header.set_gas_limit(gas_limit);
+			if parent_gas_limit != gas_limit {
+				info!(target: "engine", "Block gas limit was changed from {} to {}.", parent_gas_limit, gas_limit);
+			}
+		}
 	}
 
 	fn sealing_state(&self) -> SealingState {
@@ -1782,6 +1793,36 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		}
 
 		finalized.into_iter().map(AncestryAction::MarkFinalized).collect()
+	}
+
+	fn gas_limit_override(&self, header: &Header) -> Option<U256> {
+		let (_, &address) = self.machine.params().block_gas_limit_contract.range(..=header.number()).last()?;
+
+		let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
+			Some(client) => client,
+			None => {
+				debug!(target: "engine", "Unable to prepare block: missing client ref.");
+				return None;
+			}
+		};
+		let full_client = match client.as_full_client() {
+			Some(full_client) => full_client,
+			None => {
+				debug!(target: "engine", "Failed to upgrade to BlockchainClient.");
+				return None;
+			}
+		};
+
+		let (data, decoder) = block_gas_limit::functions::block_gas_limit::call();
+		let value = full_client.call_contract_before(header, address, data).map_err(|err| {
+			error!(target: "engine", "Failed to call blockGasLimit. Not changing the block gas limit. {:?}", err);
+		}).ok()?;
+		if value.is_empty() {
+			debug!(target: "engine", "blockGasLimit returned nothing. Not changing the block gas limit.");
+			None
+		} else {
+			decoder.decode(&value).ok()
+		}
 	}
 }
 

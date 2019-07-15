@@ -18,12 +18,18 @@
 
 use bytes::Bytes;
 use ethereum_types::Address;
+use types::header::Header;
 use types::ids::BlockId;
 
 /// Provides `call_contract` method
 pub trait CallContract {
 	/// Like `call`, but with various defaults. Designed to be used for calling contracts.
 	fn call_contract(&self, id: BlockId, address: Address, data: Bytes) -> Result<Bytes, String>;
+
+	/// Makes a constant call to a contract, at the beginning of the block corresponding to the given header, i.e. with
+	/// the EVM state after the block's parent, but with the new header's block number. Fails if the parent is not in
+	/// the database.
+	fn call_contract_before(&self, header: &Header, address: Address, data: Bytes) -> Result<Bytes, String>;
 }
 
 /// Provides information on a blockchain service and it's registry

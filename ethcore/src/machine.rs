@@ -108,6 +108,11 @@ impl EthereumMachine {
 	pub fn ethash_extensions(&self) -> Option<&EthashExtensions> {
 		self.ethash_extensions.as_ref()
 	}
+
+	/// Get a reference to the transaction filter, if present.
+	pub fn tx_filter(&self) -> Option<&Arc<TransactionFilter>> {
+		self.tx_filter.as_ref()
+	}
 }
 
 impl EthereumMachine {
