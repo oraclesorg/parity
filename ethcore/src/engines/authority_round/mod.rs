@@ -1112,7 +1112,11 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		header.set_difficulty(score);
 		if let Some(gas_limit) = self.gas_limit_override(header) {
 			trace!(target: "engine", "Setting gas limit to {} for block {}.", gas_limit, header.number());
+			let parent_gas_limit = *parent.gas_limit();
 			header.set_gas_limit(gas_limit);
+			if parent_gas_limit != gas_limit {
+				info!(target: "engine", "Block gas limit was changed from {} to {}.", parent_gas_limit, gas_limit);
+			}
 		}
 	}
 
@@ -1792,7 +1796,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 	}
 
 	fn gas_limit_override(&self, header: &Header) -> Option<U256> {
-		let (_, &address) = self.machine.params().block_gas_limit_contract.range(..header.number()).last()?;
+		let (_, &address) = self.machine.params().block_gas_limit_contract.range(..=header.number()).last()?;
 
 		let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
 			Some(client) => client,
