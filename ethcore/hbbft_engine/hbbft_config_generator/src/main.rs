@@ -1,25 +1,58 @@
 extern crate clap;
 extern crate ethcore;
+extern crate ethkey;
 extern crate hbbft;
 extern crate rand;
+extern crate rustc_hex;
 extern crate serde;
 extern crate toml;
 
 use clap::{App, Arg};
+use ethkey::{Generator, Public, Random, Secret};
 use hbbft::crypto::serde_impl::SerdeSecret;
 use hbbft::NetworkInfo;
+use rustc_hex::ToHex;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::ops::Range;
 use toml::{map::Map, Value};
 
-fn generate_ip_addresses(ids: Range<usize>) -> BTreeMap<usize, String> {
+fn create_account() -> (Secret, Public) {
+	let acc = Random
+		.generate()
+		.expect("secp context has generation capabilities; qed");
+	(acc.secret().clone(), acc.public().clone())
+}
+
+struct Enode {
+	secret: Secret,
+	public: Public,
+	ip_address: String,
+}
+
+impl ToString for Enode {
+	fn to_string(&self) -> String {
+		// Example:
+		// enode://30ccdeb8c31972f570e4eea0673cd08cbe7cefc5de1d70119b39c63b1cba33b48e494e9916c0d1eab7d296774f3573da46025d1accdef2f3690bc9e6659a34b4@192.168.0.101:30300
+		format!("enode://{:x}@{}", self.public, self.ip_address)
+	}
+}
+
+fn generate_enodes(ids: Range<usize>) -> BTreeMap<usize, Enode> {
 	let base_port = 30300usize;
 	let mut map = BTreeMap::new();
 	for (i, n) in ids.into_iter().enumerate() {
 		let ip_address = format!("127.0.0.1:{}", base_port + i + 1);
-		map.insert(n, ip_address);
+		let (secret, public) = create_account();
+		map.insert(
+			n,
+			Enode {
+				secret,
+				public,
+				ip_address,
+			},
+		);
 	}
 	map
 }
@@ -28,7 +61,7 @@ fn to_toml_array(vec: Vec<&str>) -> Value {
 	Value::Array(vec.iter().map(|s| Value::String(s.to_string())).collect())
 }
 
-fn to_toml<N>(net_info: &NetworkInfo<N>, ips_map: &BTreeMap<N, String>, i: usize) -> Value
+fn to_toml<N>(net_info: &NetworkInfo<N>, enodes_map: &BTreeMap<N, Enode>, i: usize) -> Value
 where
 	N: hbbft::NodeIdT + Serialize,
 {
@@ -121,7 +154,11 @@ where
 	mining.insert("hbbft_public_keys".into(), Value::String(pk_serialized));
 
 	// Write the validator IP Addresses
-	let ips_serialized = serde_json::to_string(&ips_map).unwrap();
+	let enode_map: BTreeMap<_, _> = enodes_map
+		.iter()
+		.map(|(n, enode)| (n, enode.to_string()))
+		.collect();
+	let ips_serialized = serde_json::to_string(&enode_map).unwrap();
 	mining.insert(
 		"hbbft_validator_ip_addresses".into(),
 		Value::String(ips_serialized),
@@ -176,14 +213,18 @@ fn main() {
 	let mut rng = rand::thread_rng();
 	let net_infos = NetworkInfo::generate_map(0..num_nodes, &mut rng)
 		.expect("NetworkInfo generation expected to succeed");
-	let ips_map = generate_ip_addresses(0..num_nodes);
+	let enodes_map = generate_enodes(0..num_nodes);
 
-	for (i, (_, info)) in net_infos.iter().enumerate() {
+	for (i, (n, info)) in net_infos.iter().enumerate() {
 		// Note: node 0 is a regular full node (not a validator) in the testnet setup, so we start at index 1.
 		let file_name = format!("hbbft_validator_{}.toml", i + 1);
-		let toml_string = toml::to_string(&to_toml(info, &ips_map, i + 1))
+		let toml_string = toml::to_string(&to_toml(info, &enodes_map, i + 1))
 			.expect("TOML string generation should succeed");
 		fs::write(file_name, toml_string).expect("Unable to write config file");
+
+		let file_name = format!("hbbft_validator_key{}", i + 1);
+		let enode = enodes_map.get(n).expect("validator id must be mapped");
+		fs::write(file_name, enode.secret.to_hex()).expect("Unable to write config file");
 	}
 }
 
@@ -232,10 +273,9 @@ mod tests {
 	fn test_network_info_serde() {
 		let mut rng = rand::thread_rng();
 		let net_infos = NetworkInfo::generate_map(0..1usize, &mut rng).unwrap();
-		let ips_map = generate_ip_addresses(0..1usize);
+		let enodes_map = generate_enodes(0..1usize);
 		let net_info = net_infos.get(&0).unwrap();
-		let toml_string = toml::to_string(&to_toml(&net_info, &ips_map, 0)).unwrap();
-
+		let toml_string = toml::to_string(&to_toml(&net_info, &enodes_map, 0)).unwrap();
 		let config: TomlHbbftOptions = toml::from_str(&toml_string).unwrap();
 		compare(net_info, &config);
 	}
