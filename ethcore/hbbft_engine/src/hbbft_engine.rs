@@ -143,6 +143,7 @@ impl HoneyBadgerBFT {
 			.and_then(|honey_badger: &mut HoneyBadger| {
 				if let Ok(step) = honey_badger.handle_message(&sender_id, message) {
 					self.process_step(client, step, node_id);
+					self.join_hbbft_epoch(honey_badger);
 				} else {
 					// TODO: Report consensus step errors
 					error!(target: "engine", "Error on HoneyBadger consensus step");
@@ -186,34 +187,60 @@ impl HoneyBadgerBFT {
 		self.process_output(&client, step.output);
 	}
 
-	fn send_contribution(&self, client: Arc<EngineClient>) {
-		if let Some(ref mut honey_badger) = *self.honey_badger.write() {
-			// TODO: Select a random *subset* of transactions to propose
-			let input_contribution = Contribution::new(
-				&client
-					.queued_transactions()
-					.iter()
-					.map(|txn| txn.signed().clone())
-					.collect(),
-			);
-			let mut rng = rand::thread_rng();
-			let step = honey_badger.propose(&input_contribution, &mut rng);
+	fn send_contribution(&self, client: Arc<EngineClient>, honey_badger: &mut HoneyBadger) {
+		// TODO: Select a random *subset* of transactions to propose
+		let input_contribution = Contribution::new(
+			&client
+				.queued_transactions()
+				.iter()
+				.map(|txn| txn.signed().clone())
+				.collect(),
+		);
+		let mut rng = rand::thread_rng();
+		let step = honey_badger.propose(&input_contribution, &mut rng);
 
-			match step {
-				Ok(step) => {
-					self.process_step(client, step);
+		match step {
+			Ok(step) => {
+				self.process_step(client, step);
+			}
+			_ => {
+				// TODO: Report consensus step errors
+				error!(target: "engine", "Error on HoneyBadger consensus step.");
+			}
+		}
+	}
+
+	/// Conditionally joins the current hbbft epoch if the number of received
+	/// contributions exceeds the maximum number of tolerated faulty nodes.
+	fn join_hbbft_epoch(&self, honey_badger: &mut HoneyBadger) {
+		// Only send a contribution if this node has not sent a contribution
+		// in the current epoch yet.
+		if !honey_badger.has_input() {
+			if let Some(ref net_info) = *self.network_info.read() {
+				if honey_badger.received_proposals() > net_info.num_faulty() {
+					if let Some(ref weak) = *self.client.read() {
+						if let Some(client) = weak.upgrade() {
+							self.send_contribution(client, honey_badger);
+						} else {
+							panic!("The Client weak reference could not be upgraded.");
+						}
+					} else {
+						panic!("The Client is expected to be set.");
+					}
 				}
-				_ => {
-					// TODO: Report consensus step errors
-					error!(target: "engine", "Error on HoneyBadger consensus step");
-				}
+			} else {
+				panic!("The Network Info expected to be set.");
 			}
 		}
 	}
 
 	fn start_hbbft_epoch(&self, client: Arc<EngineClient>) {
 		// TODO: Check if an epoch is already started
-		self.send_contribution(client);
+		if let Some(ref mut honey_badger) = *self.honey_badger.write() {
+			self.send_contribution(client, honey_badger);
+		} else {
+			error!(target: "engine", "Attempt to start an epoch without the honey badger algorithm being set.");
+		}
 	}
 }
 
