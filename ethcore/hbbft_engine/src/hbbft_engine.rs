@@ -7,6 +7,7 @@ use ethcore::engines::{
 };
 use ethcore::error::Error;
 use ethcore::machine::EthereumMachine;
+use ethereum_types::{H256,H512};
 use ethcore::miner::HbbftOptions;
 use hbbft::crypto::{serde_impl::SerdeSecret, PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
 use hbbft::honey_badger::{HoneyBadgerBuilder, Step};
@@ -128,7 +129,7 @@ impl HoneyBadgerBFT {
 		client.update_sealing();
 	}
 
-	fn process_message(&self, sender_id: usize, message: Message) -> Result<(), EngineError> {
+	fn process_message(&self, sender_id: usize, message: Message, node_id:Option<H512>) -> Result<(), EngineError> {
 		let client = self
 			.client
 			.read()
@@ -141,7 +142,7 @@ impl HoneyBadgerBFT {
 			.as_mut()
 			.and_then(|honey_badger: &mut HoneyBadger| {
 				if let Ok(step) = honey_badger.handle_message(&sender_id, message) {
-					self.process_step(client, step);
+					self.process_step(client, step, node_id);
 				} else {
 					// TODO: Report consensus step errors
 					error!(target: "engine", "Error on HoneyBadger consensus step");
@@ -151,14 +152,14 @@ impl HoneyBadgerBFT {
 			.ok_or(EngineError::InvalidEngine)
 	}
 
-	fn dispatch_messages(&self, client: &Arc<EngineClient>, messages: Vec<TargetedMessage>) {
+	fn dispatch_messages(&self, client: &Arc<EngineClient>, messages: Vec<TargetedMessage>, node_id:Option<H512>) {
 		for m in messages {
 			if let Ok(ser) = serde_json::to_vec(&m.message) {
 				match m.target {
 					Target::Node(n) => {
 						// for debugging
 						// println!("Sending targeted message: {:?}", m.message);
-						client.send_consensus_message(ser, n);
+						client.send_consensus_message(ser, n, node_id);
 					}
 					Target::All => {
 						// for debugging
@@ -180,8 +181,8 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn process_step(&self, client: Arc<EngineClient>, step: Step<Contribution, usize>) {
-		self.dispatch_messages(&client, step.messages);
+	fn process_step(&self, client: Arc<EngineClient>, step: Step<Contribution, usize>, node_id:Option<H512>) {
+		self.dispatch_messages(&client, step.messages, node_id);
 		self.process_output(&client, step.output);
 	}
 
@@ -264,9 +265,9 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		}
 	}
 
-	fn handle_message(&self, message: &[u8], peer_id: usize) -> Result<(), EngineError> {
+	fn handle_message(&self, message: &[u8], peer_id: usize, node_id:Option<H512>) -> Result<(), EngineError> {
 		match serde_json::from_slice(message) {
-			Ok(decoded_message) => self.process_message(peer_id, decoded_message),
+			Ok(decoded_message) => self.process_message(peer_id, decoded_message,node_id),
 			_ => Err(EngineError::UnexpectedMessage),
 		}
 	}

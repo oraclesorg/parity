@@ -26,7 +26,7 @@ use bytes::Bytes;
 use call_contract::{CallContract, RegistryInfo};
 use ethcore_miner::pool::VerifiedTransaction;
 use ethcore_miner::service_transaction_checker::ServiceTransactionChecker;
-use ethereum_types::{H256, Address, U256};
+use ethereum_types::{H256, H512, Address, U256};
 use evm::Schedule;
 use hash::keccak;
 use io::IoChannel;
@@ -2282,9 +2282,9 @@ impl IoClient for Client {
 		Ok(hash)
 	}
 
-	fn queue_consensus_message(&self, message: Bytes, peer_id: usize) {
+	fn queue_consensus_message(&self, message: Bytes, peer_id: usize, node_id:Option<H512>) {
 		match self.queue_consensus_message.queue(&self.io_channel.read(), 1, move |client| {
-			if let Err(e) = client.engine().handle_message(&message, peer_id) {
+			if let Err(e) = client.engine().handle_message(&message, peer_id, node_id) {
 				debug!(target: "poa", "Invalid message received: {}", e);
 			}
 		}) {
@@ -2483,8 +2483,8 @@ impl super::traits::EngineClient for Client {
 		self.notify(|notify| notify.broadcast(ChainMessageType::Consensus(message.clone())));
 	}
 
-	fn send_consensus_message(&self, message: Bytes, peer_id: usize) {
-		self.notify(|notify| notify.send(ChainMessageType::Consensus(message.clone()), peer_id, None));
+	fn send_consensus_message(&self, message: Bytes, peer_id: usize, node_id:Option<H512>) {
+		self.notify(|notify| notify.send(ChainMessageType::Consensus(message.clone()), peer_id, node_id));
 	}
 
 	fn epoch_transition_for(&self, parent_hash: H256) -> Option<::engines::EpochTransition> {

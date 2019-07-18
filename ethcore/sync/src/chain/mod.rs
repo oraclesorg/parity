@@ -99,7 +99,7 @@ use std::cmp;
 use std::time::{Duration, Instant};
 use hash::keccak;
 use heapsize::HeapSizeOf;
-use ethereum_types::{H256, U256};
+use ethereum_types::{H256, H512, U256};
 use fastmap::{H256FastMap, H256FastSet};
 use parking_lot::{Mutex, RwLock, RwLockWriteGuard};
 use bytes::Bytes;
@@ -418,8 +418,8 @@ impl ChainSyncApi {
 	}
 
 	/// Dispatch incoming requests and responses
-	pub fn dispatch_packet(&self, io: &mut SyncIo, peer: PeerId, packet_id: u8, data: &[u8]) {
-		SyncSupplier::dispatch_packet(&self.sync, io, peer, packet_id, data)
+	pub fn dispatch_packet(&self, io: &mut SyncIo, peer: PeerId, packet_id: u8, data: &[u8], node_id:Option<H512>) {
+		SyncSupplier::dispatch_packet(&self.sync, io, peer, packet_id, data, node_id)
 	}
 
 	/// Process a priority propagation queue.

@@ -42,7 +42,7 @@ use ethkey::{self, Signature};
 use io::{IoContext, IoHandler, TimerToken, IoService};
 use itertools::{self, Itertools};
 use rlp::{encode, Decodable, DecoderError, Encodable, RlpStream, Rlp};
-use ethereum_types::{H256, H520, Address, U128, U256};
+use ethereum_types::{H256, H512, H520, Address, U128, U256};
 use parking_lot::{Mutex, RwLock};
 use types::BlockNumber;
 use types::ancestry_action::AncestryAction;
@@ -1155,7 +1155,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		SealingState::Ready
 	}
 
-	fn handle_message(&self, rlp: &[u8], _peer_id: usize) -> Result<(), EngineError> {
+	fn handle_message(&self, rlp: &[u8], _peer_id: usize, _node_id:Option<H512>) -> Result<(), EngineError> {
 		fn fmt_err<T: ::std::fmt::Debug>(x: T) -> EngineError {
 			EngineError::MalformedMessage(format!("{:?}", x))
 		}

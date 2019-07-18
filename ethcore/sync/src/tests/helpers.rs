@@ -275,7 +275,7 @@ impl<C: FlushingBlockChainClient> Peer for EthPeer<C> {
 
 	fn receive_message(&self, from: PeerId, msg: TestPacket) -> HashSet<PeerId> {
 		let mut io = TestIo::new(&*self.chain, &self.snapshot_service, &self.queue, Some(from));
-		SyncSupplier::dispatch_packet(&self.sync, &mut io, from, msg.packet_id, &msg.data);
+		SyncSupplier::dispatch_packet(&self.sync, &mut io, from, msg.packet_id, &msg.data, None);
 		self.chain.flush();
 		io.to_disconnect.clone()
 	}
