@@ -586,19 +586,12 @@ impl ChainNotify for EthSync {
 		});
 	}
 
-	fn send(&self, _message_type: ChainMessageType, _peer_id: usize) {
-		//unimplemented!("TODO: Send message to _peer_id.");
+	fn send(&self, _message_type: ChainMessageType, _peer_id: usize, node_id: Option<H512>) {
 		self.network.with_context(WARP_SYNC_PROTOCOL_ID, |context| {
 			let peer_ids = self.network.connected_peers();
-			let mut my_peer_id=0;
-			for peer_id in peer_ids.into_iter(){
-				let session_info = context.session_info(peer_id);
-				let node = session_info.unwrap().id;
-				if  node == node_id {
-					my_peer_id = peer_id;
-					break;
-				}
-			}
+			let node_ids = peer_ids.iter().map(|&x|context.session_info(x).unwrap().id).collect::<Vec<Option<H512>>>();
+			let index = node_ids.into_iter().position(|r| r == node_id).unwrap();
+			let my_peer_id = peer_ids[index];
 
 			let mut sync_io = NetSyncIo::new(context, &*self.eth_handler.chain, &*self.eth_handler.snapshot_service, &self.eth_handler.overlay);
 			match _message_type {

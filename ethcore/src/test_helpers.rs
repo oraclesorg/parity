@@ -23,7 +23,7 @@ use std::{fs, io};
 use blockchain::{BlockChain, BlockChainDB, BlockChainDBHandler, Config as BlockChainConfig, ExtrasInsert};
 use blooms_db;
 use bytes::Bytes;
-use ethereum_types::{H256, U256, Address};
+use ethereum_types::{H256, H512, U256, Address};
 use ethkey::KeyPair;
 use evm::Factory as EvmFactory;
 use hash::keccak;

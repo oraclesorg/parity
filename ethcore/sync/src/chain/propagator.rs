@@ -293,8 +293,8 @@ impl SyncPropagator {
 		}
 	}
 
-	pub fn send_consensus_packet(_sync: &mut ChainSync, io: &mut SyncIo, packet: Bytes, _peer_id: usize) {
-		SyncPropagator::send_packet(io, _peer_id, ConsensusDataPacket, packet.clone());
+	pub fn send_consensus_packet(_sync: &mut ChainSync, io: &mut SyncIo, packet: Bytes, peer_id: usize) {
+		SyncPropagator::send_packet(io, peer_id, ConsensusDataPacket, packet.clone());
 	}
 
 	/// Broadcast private transaction message to peers.
