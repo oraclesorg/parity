@@ -517,7 +517,7 @@ impl ChainNotify for TestNotify {
 		self.messages.write().push(data);
 	}
 
-	fn send(&self, message: ChainMessageType, peer_id: usize) {
+	fn send(&self, message: ChainMessageType, peer_id: usize, node_id: Option<H512>) {
 		let data = match message {
 			ChainMessageType::Consensus(data) => data,
 			ChainMessageType::SignedPrivateTransaction(_, data) => data,
