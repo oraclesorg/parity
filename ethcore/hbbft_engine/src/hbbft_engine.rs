@@ -213,31 +213,32 @@ impl HoneyBadgerBFT {
 	/// Conditionally joins the current hbbft epoch if the number of received
 	/// contributions exceeds the maximum number of tolerated faulty nodes.
 	fn join_hbbft_epoch(&self, honey_badger: &mut HoneyBadger) {
-		// Only send a contribution if this node has not sent a contribution
-		// in the current epoch yet.
-		if !honey_badger.has_input() {
-			if let Some(ref net_info) = *self.network_info.read() {
-				if honey_badger.received_proposals() > net_info.num_faulty() {
-					if let Some(ref weak) = *self.client.read() {
-						if let Some(client) = weak.upgrade() {
-							self.send_contribution(client, honey_badger);
-						} else {
-							panic!("The Client weak reference could not be upgraded.");
-						}
+		if honey_badger.has_input() {
+			return;
+		}
+
+		if let Some(ref net_info) = *self.network_info.read() {
+			if honey_badger.received_proposals() > net_info.num_faulty() {
+				if let Some(ref weak) = *self.client.read() {
+					if let Some(client) = weak.upgrade() {
+						self.send_contribution(client, honey_badger);
 					} else {
-						panic!("The Client is expected to be set.");
+						panic!("The Client weak reference could not be upgraded.");
 					}
+				} else {
+					panic!("The Client is expected to be set.");
 				}
-			} else {
-				panic!("The Network Info expected to be set.");
 			}
+		} else {
+			panic!("The Network Info expected to be set.");
 		}
 	}
 
 	fn start_hbbft_epoch(&self, client: Arc<EngineClient>) {
-		// TODO: Check if an epoch is already started
 		if let Some(ref mut honey_badger) = *self.honey_badger.write() {
-			self.send_contribution(client, honey_badger);
+			if !honey_badger.has_input() {
+				self.send_contribution(client, honey_badger);
+			}
 		} else {
 			error!(target: "engine", "Attempt to start an epoch without the honey badger algorithm being set.");
 		}
