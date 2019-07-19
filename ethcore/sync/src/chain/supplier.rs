@@ -16,7 +16,7 @@
 
 use bytes::Bytes;
 use enum_primitive::FromPrimitive;
-use ethereum_types::{H256,H512};
+use ethereum_types::{H256, H512};
 use network::{self, PeerId};
 use parking_lot::RwLock;
 use rlp::{Rlp, RlpStream};
@@ -63,7 +63,7 @@ impl SyncSupplier {
 	/// Dispatch incoming requests and responses
 	// Take a u8 and not a SyncPacketId because this is the entry point
 	// to chain sync from the outside world.
-	pub fn dispatch_packet(sync: &RwLock<ChainSync>, io: &mut SyncIo, peer: PeerId, packet_id: u8, data: &[u8], node_id:Option<H512>) {
+	pub fn dispatch_packet(sync: &RwLock<ChainSync>, io: &mut SyncIo, peer: PeerId, packet_id: u8, data: &[u8], node_id: Option<H512>) {
 		let rlp = Rlp::new(data);
 
 		if let Some(id) = SyncPacket::from_u8(packet_id) {

@@ -418,7 +418,7 @@ impl ChainSyncApi {
 	}
 
 	/// Dispatch incoming requests and responses
-	pub fn dispatch_packet(&self, io: &mut SyncIo, peer: PeerId, packet_id: u8, data: &[u8], node_id:Option<H512>) {
+	pub fn dispatch_packet(&self, io: &mut SyncIo, peer: PeerId, packet_id: u8, data: &[u8], node_id: Option<H512>) {
 		SyncSupplier::dispatch_packet(&self.sync, io, peer, packet_id, data, node_id)
 	}
 
