@@ -7,7 +7,7 @@ use ethcore::engines::{
 };
 use ethcore::error::Error;
 use ethcore::machine::EthereumMachine;
-use ethereum_types::{H256, H512};
+use ethereum_types::H512;
 use ethcore::miner::HbbftOptions;
 use hbbft::crypto::{serde_impl::SerdeSecret, PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
 use hbbft::honey_badger::{HoneyBadgerBuilder, Step};
@@ -135,7 +135,7 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn process_message(&self, sender_id: usize, message: Message, node_id: Option<H512>) -> Result<(), EngineError> {
+	fn process_message(&self, sender_id: usize, message: Message, _node_id: Option<H512>) -> Result<(), EngineError> {
 		let client = self
 			.client
 			.read()
@@ -148,7 +148,7 @@ impl HoneyBadgerBFT {
 			.as_mut()
 			.and_then(|honey_badger: &mut HoneyBadger| {
 				if let Ok(step) = honey_badger.handle_message(&sender_id, message) {
-					self.process_step(client, step, node_id);
+					self.process_step(client, step);
 					self.join_hbbft_epoch(honey_badger);
 				} else {
 					// TODO: Report consensus step errors
@@ -159,14 +159,14 @@ impl HoneyBadgerBFT {
 			.ok_or(EngineError::InvalidEngine)
 	}
 
-	fn dispatch_messages(&self, client: &Arc<EngineClient>, messages: Vec<TargetedMessage>, node_id: Option<H512>) {
+	fn dispatch_messages(&self, client: &Arc<EngineClient>, messages: Vec<TargetedMessage>) {
 		for m in messages {
 			if let Ok(ser) = serde_json::to_vec(&m.message) {
 				match m.target {
 					Target::Node(n) => {
 						// for debugging
 						// println!("Sending targeted message: {:?}", m.message);
-						client.send_consensus_message(ser, n, node_id);
+						client.send_consensus_message(ser, n, None);
 					}
 					Target::All => {
 						// for debugging
@@ -174,7 +174,7 @@ impl HoneyBadgerBFT {
 
 						if let Some(ref net_info) = *self.network_info.read() {
 							for peer_id in net_info.all_ids().filter(|p| p != &net_info.our_id()) {
-								client.send_consensus_message(ser.clone(), *peer_id);
+								client.send_consensus_message(ser.clone(), *peer_id, None);
 							}
 						} else {
 							panic!("Network Info expected to be initialized");
@@ -188,8 +188,8 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn process_step(&self, client: Arc<EngineClient>, step: Step<Contribution, usize>, node_id: Option<H512>) {
-		self.dispatch_messages(&client, step.messages, node_id);
+	fn process_step(&self, client: Arc<EngineClient>, step: Step<Contribution, usize>) {
+		self.dispatch_messages(&client, step.messages);
 		self.process_output(client, step.output);
 	}
 
