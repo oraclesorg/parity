@@ -134,7 +134,7 @@ mod tests {
 				nodes[m.1]
 					.client
 					.engine()
-					.handle_message(&m.0, from)
+					.handle_message(&m.0, from, None)
 					.expect("message handling to succeed");
 			}
 			n.notify.targeted_messages.write().clear();
