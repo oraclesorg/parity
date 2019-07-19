@@ -93,7 +93,7 @@ impl HoneyBadgerBFT {
 		None
 	}
 
-	fn process_output(&self, client: &Arc<EngineClient>, output: Vec<Batch>) {
+	fn process_output(&self, client: Arc<EngineClient>, output: Vec<Batch>) {
 		// TODO: Multiple outputs are possible,
 		//       process all outputs, respecting their epoch context.
 		let batch = match output.first() {
@@ -127,6 +127,12 @@ impl HoneyBadgerBFT {
 
 		client.create_pending_block(batch_txns, timestamp);
 		client.update_sealing();
+
+		// Start a new epoch immediately if the transaction queue
+		// is longer than the configured threshold.
+		if client.queued_transactions().len() >= self.transactions_trigger {
+			self.start_hbbft_epoch(client);
+		}
 	}
 
 	fn process_message(&self, sender_id: usize, message: Message, node_id: Option<H512>) -> Result<(), EngineError> {
@@ -184,7 +190,7 @@ impl HoneyBadgerBFT {
 
 	fn process_step(&self, client: Arc<EngineClient>, step: Step<Contribution, usize>, node_id: Option<H512>) {
 		self.dispatch_messages(&client, step.messages, node_id);
-		self.process_output(&client, step.output);
+		self.process_output(client, step.output);
 	}
 
 	fn send_contribution(&self, client: Arc<EngineClient>, honey_badger: &mut HoneyBadger) {
