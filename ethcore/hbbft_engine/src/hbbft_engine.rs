@@ -7,8 +7,9 @@ use ethcore::engines::{
 };
 use ethcore::error::Error;
 use ethcore::machine::EthereumMachine;
-use ethereum_types::H512;
 use ethcore::miner::HbbftOptions;
+use ethereum_types::H512;
+use ethkey::Public;
 use hbbft::crypto::{serde_impl::SerdeSecret, PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
 use hbbft::honey_badger::{HoneyBadgerBuilder, Step};
 use hbbft::{NetworkInfo, Target};
@@ -21,7 +22,7 @@ use std::sync::{Arc, Weak};
 use types::header::{ExtendedHeader, Header};
 use types::transaction::SignedTransaction;
 
-type NodeId = usize;
+type NodeId = Public;
 type HoneyBadger = hbbft::honey_badger::HoneyBadger<Contribution, NodeId>;
 type Message = hbbft::honey_badger::Message<NodeId>;
 type Batch = hbbft::honey_badger::Batch<Contribution, NodeId>;
@@ -77,9 +78,7 @@ impl HoneyBadgerBFT {
 			if let Some(client) = weak.upgrade() {
 				// TODO: Retrieve the information to build a node-specific NetworkInfo
 				//       struct from the chain spec and from contracts.
-				let options = client
-					.hbbft_options()
-					.expect("hbbft options are expected to exist");
+				let options = client.hbbft_options().expect("hbbft options have to exist");
 				if let Some(net_info) = HoneyBadgerBFT::new_network_info(options) {
 					let mut builder: HoneyBadgerBuilder<Contribution, _> =
 						HoneyBadger::builder(Arc::new(net_info.clone()));
@@ -135,7 +134,12 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn process_message(&self, sender_id: usize, message: Message, _node_id: Option<H512>) -> Result<(), EngineError> {
+	fn process_message(
+		&self,
+		sender_id: NodeId,
+		message: Message,
+		_node_id: Option<H512>,
+	) -> Result<(), EngineError> {
 		let client = self
 			.client
 			.read()
@@ -188,7 +192,7 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn process_step(&self, client: Arc<EngineClient>, step: Step<Contribution, usize>) {
+	fn process_step(&self, client: Arc<EngineClient>, step: Step<Contribution, NodeId>) {
 		self.dispatch_messages(&client, step.messages);
 		self.process_output(client, step.output);
 	}
@@ -299,9 +303,14 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		}
 	}
 
-	fn handle_message(&self, message: &[u8], peer_id: usize, node_id: Option<H512>) -> Result<(), EngineError> {
+	fn handle_message(
+		&self,
+		message: &[u8],
+		peer_id: H512,
+		node_id: Option<H512>,
+	) -> Result<(), EngineError> {
 		match serde_json::from_slice(message) {
-			Ok(decoded_message) => self.process_message(peer_id, decoded_message,node_id),
+			Ok(decoded_message) => self.process_message(peer_id, decoded_message, node_id),
 			_ => Err(EngineError::UnexpectedMessage),
 		}
 	}

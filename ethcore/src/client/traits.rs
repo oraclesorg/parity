@@ -197,7 +197,7 @@ pub trait IoClient: Sync + Send {
 	fn queue_ancient_block(&self, block_bytes: Unverified, receipts_bytes: Bytes) -> EthcoreResult<H256>;
 
 	/// Queue conensus engine message.
-	fn queue_consensus_message(&self, message: Bytes, peer_id: usize, node_id: Option<H512>);
+	fn queue_consensus_message(&self, message: Bytes, peer_id: H512, node_id: Option<H512>);
 }
 
 /// Provides recently seen bad blocks.
@@ -455,7 +455,7 @@ pub trait EngineClient: Sync + Send + ChainInfo + Nonce {
 	fn broadcast_consensus_message(&self, message: Bytes);
 
 	/// Send a consensus message to the specified peer
-	fn send_consensus_message(&self, message: Bytes, _peer_id: usize, node_id: Option<H512>);
+	fn send_consensus_message(&self, message: Bytes, _peer_id: H512, node_id: Option<H512>);
 
 	/// Get the transition to the epoch the given parent hash is part of
 	/// or transitions to.

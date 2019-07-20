@@ -587,7 +587,7 @@ impl ChainNotify for EthSync {
 		});
 	}
 
-	fn send(&self, _message_type: ChainMessageType, _peer_id: usize, node_id: Option<H512>) {
+	fn send(&self, _message_type: ChainMessageType, _peer_id: H512, node_id: Option<H512>) {
 		self.network.with_context(WARP_SYNC_PROTOCOL_ID, |context| {
 			let peer_ids = self.network.connected_peers();
 			let node_ids = peer_ids.iter().map(|&x|context.session_info(x).unwrap().id).collect::<Vec<Option<H512>>>();

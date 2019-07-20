@@ -45,6 +45,7 @@ mod tests {
 	use crate::test_helpers::{hbbft_client_setup, inject_transaction, HbbftTestData};
 	use ethcore::client::{BlockId, BlockInfo};
 	use ethereum_types::H256;
+	use ethkey::{Generator, Public, Random};
 	use hbbft::NetworkInfo;
 	use hbbft_testing::proptest::{gen_seed, TestRng, TestRngSeed};
 	use proptest::{prelude::ProptestConfig, proptest};
@@ -91,6 +92,19 @@ mod tests {
 		map
 	}
 
+	fn generate_ids(num_ids: usize) -> Vec<Public> {
+		let mut ids = Vec::new();
+		for _ in 0..num_ids {
+			ids.push(
+				*Random
+					.generate()
+					.expect("H512 has generation capabilities")
+					.public(),
+			);
+		}
+		ids
+	}
+
 	// Returns `true` if the node has not output all transactions yet.
 	// If it has, and has advanced another epoch, it clears all messages for later epochs.
 	fn has_messages(node: &HbbftTestData) -> bool {
@@ -101,13 +115,15 @@ mod tests {
 		super::init();
 
 		let mut rng = TestRng::from_seed(seed);
-		let net_infos = NetworkInfo::generate_map(0..1usize, &mut rng)
+		let net_infos = NetworkInfo::generate_map(generate_ids(1), &mut rng)
 			.expect("NetworkInfo generation is expected to always succeed");
 		let ips_map = generate_ip_addresses(0..1usize);
 
 		let net_info = net_infos
-			.get(&0)
-			.expect("A NetworkInfo must exist for node 0");
+			.iter()
+			.nth(0)
+			.expect("A NetworkInfo must exist for node 0")
+			.1;
 
 		let test_data = hbbft_client_setup(net_info.clone(), &ips_map);
 
@@ -128,36 +144,38 @@ mod tests {
 		assert_eq!(block.transactions_count(), 1);
 	}
 
-	fn crank_network_single_step(nodes: &Vec<HbbftTestData>) {
-		for (from, n) in nodes.iter().enumerate() {
+	fn crank_network_single_step(nodes: &BTreeMap<Public, HbbftTestData>) {
+		for (from, n) in nodes.iter() {
 			for m in n.notify.targeted_messages.write().iter() {
-				nodes[m.1]
+				nodes
+					.get(&m.1)
+					.expect("Message target not found in nodes map")
 					.client
 					.engine()
-					.handle_message(&m.0, from, None)
+					.handle_message(&m.0, *from, None)
 					.expect("message handling to succeed");
 			}
 			n.notify.targeted_messages.write().clear();
 		}
 	}
 
-	fn crank_network(nodes: &Vec<HbbftTestData>) {
-		while nodes.iter().any(has_messages) {
+	fn crank_network(nodes: &BTreeMap<Public, HbbftTestData>) {
+		while nodes.iter().any(|(_, test_data)| has_messages(test_data)) {
 			crank_network_single_step(nodes);
 		}
 	}
 
 	fn test_with_size<R: Rng>(rng: &mut R, size: usize) {
-		let net_infos = NetworkInfo::generate_map(0..size, rng)
-			.expect("NetworkInfo generation to always succeed");
+		let ids = generate_ids(size);
+		let net_infos =
+			NetworkInfo::generate_map(ids, rng).expect("NetworkInfo generation to always succeed");
 		let ips_map = generate_ip_addresses(0..size);
-
-		let nodes: Vec<_> = net_infos
+		let nodes: BTreeMap<_, _> = net_infos
 			.into_iter()
-			.map(|(_, netinfo)| hbbft_client_setup(netinfo, &ips_map))
+			.map(|(n, netinfo)| (n, hbbft_client_setup(netinfo, &ips_map)))
 			.collect();
 
-		for n in &nodes {
+		for (_, n) in &nodes {
 			// Verify that we actually start at block 0.
 			assert_eq!(n.client.chain().best_block_number(), 0);
 			// Inject transactions to kick off block creation.
@@ -168,13 +186,13 @@ mod tests {
 		crank_network(&nodes);
 
 		// All nodes need to have produced a block.
-		for n in &nodes {
+		for (_, n) in &nodes {
 			assert_eq!(n.client.chain().best_block_number(), 1);
 		}
 
 		// All nodes need to produce the same block with the same hash.
 		let mut expected: Option<H256> = None;
-		for n in &nodes {
+		for (_, n) in &nodes {
 			match expected {
 				None => expected = Some(n.client.chain().best_block_hash()),
 				Some(h) => assert_eq!(n.client.chain().best_block_hash(), h),
@@ -206,21 +224,19 @@ mod tests {
 		// Other nodes should *not* join the epoch if they receive only
 		// one contribution, but if 2 or more are received they should!
 		let network_size: usize = 4;
-
-		let net_infos = NetworkInfo::generate_map(0..network_size, &mut rng)
+		let ids = generate_ids(network_size);
+		let net_infos = NetworkInfo::generate_map(ids, &mut rng)
 			.expect("NetworkInfo generation is expected to always succeed");
 		let ips_map = generate_ip_addresses(0..network_size);
 
-		let nodes: Vec<_> = net_infos
+		let nodes: BTreeMap<_, _> = net_infos
 			.into_iter()
-			.map(|(_, netinfo)| hbbft_client_setup(netinfo, &ips_map))
+			.map(|(n, netinfo)| (n, hbbft_client_setup(netinfo, &ips_map)))
 			.collect();
 
 		// Get the first node and send a transaction to it.
-		let first_node = &nodes.iter().nth(0).unwrap();
-		let second_node = &nodes.iter().nth(1).unwrap();
-		//        let third_node = &nodes.iter().nth(2).unwrap();
-		//        let fourth_node = &nodes.iter().nth(3).unwrap();
+		let first_node = &nodes.iter().nth(0).unwrap().1;
+		let second_node = &nodes.iter().nth(1).unwrap().1;
 		inject_transaction(&first_node.client, &first_node.miner);
 
 		// Crank the network until no node has any input
@@ -231,8 +247,6 @@ mod tests {
 
 		// Get the second node and send a transaction to it.
 		inject_transaction(&second_node.client, &second_node.miner);
-		//        inject_transaction(&third_node.client, &third_node.miner);
-		//        inject_transaction(&fourth_node.client, &fourth_node.miner);
 
 		// Crank the network until no node has any input
 		crank_network(&nodes);
