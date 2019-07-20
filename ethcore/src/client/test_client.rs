@@ -923,7 +923,7 @@ impl IoClient for TestBlockChainClient {
 		self.import_block(unverified)
 	}
 
-	fn queue_consensus_message(&self, message: Bytes, peer_id: usize, node_id: Option<H512>) {
+	fn queue_consensus_message(&self, message: Bytes, peer_id: H512, node_id: Option<H512>) {
 		self.spec.engine.handle_message(&message, peer_id, node_id).unwrap();
 	}
 }
@@ -960,7 +960,7 @@ impl super::traits::EngineClient for TestBlockChainClient {
 
 	fn broadcast_consensus_message(&self, _message: Bytes) {}
 
-	fn send_consensus_message(&self, _message: Bytes, _peer_id: usize, _node_id: Option<H512>) {
+	fn send_consensus_message(&self, _message: Bytes, _peer_id: H512, _node_id: Option<H512>) {
 		// TODO: allow test to intercept the message to relay it to other test clients
 	}
 

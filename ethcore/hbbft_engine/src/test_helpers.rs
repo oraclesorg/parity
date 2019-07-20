@@ -6,7 +6,7 @@ use ethcore::spec::Spec;
 use ethcore::test_helpers::generate_dummy_client_with_spec;
 use ethcore::test_helpers::TestNotify;
 use ethereum_types::U256;
-use ethkey::{Generator, Random};
+use ethkey::{Generator, Public, Random};
 use hash::keccak;
 use hbbft::crypto::serde_impl::SerdeSecret;
 use hbbft::NetworkInfo;
@@ -34,7 +34,7 @@ pub struct HbbftTestData {
 }
 
 fn serialize_netinfo(
-	net_info: NetworkInfo<usize>,
+	net_info: NetworkInfo<Public>,
 	ips_map: &BTreeMap<usize, String>,
 ) -> HbbftOptions {
 	let hbbft_our_id = serde_json::to_string(&net_info.our_id()).unwrap();
@@ -61,7 +61,7 @@ fn serialize_netinfo(
 }
 
 pub fn hbbft_client_setup(
-	net_info: NetworkInfo<usize>,
+	net_info: NetworkInfo<Public>,
 	ips_map: &BTreeMap<usize, String>,
 ) -> HbbftTestData {
 	let client = hbbft_client();

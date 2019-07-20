@@ -2282,7 +2282,7 @@ impl IoClient for Client {
 		Ok(hash)
 	}
 
-	fn queue_consensus_message(&self, message: Bytes, peer_id: usize, node_id: Option<H512>) {
+	fn queue_consensus_message(&self, message: Bytes, peer_id: H512, node_id: Option<H512>) {
 		match self.queue_consensus_message.queue(&self.io_channel.read(), 1, move |client| {
 			if let Err(e) = client.engine().handle_message(&message, peer_id, node_id) {
 				debug!(target: "poa", "Invalid message received: {}", e);
@@ -2483,7 +2483,7 @@ impl super::traits::EngineClient for Client {
 		self.notify(|notify| notify.broadcast(ChainMessageType::Consensus(message.clone())));
 	}
 
-	fn send_consensus_message(&self, message: Bytes, peer_id: usize, node_id: Option<H512>) {
+	fn send_consensus_message(&self, message: Bytes, peer_id: H512, node_id: Option<H512>) {
 		self.notify(|notify| notify.send(ChainMessageType::Consensus(message.clone()), peer_id, node_id));
 	}
 
