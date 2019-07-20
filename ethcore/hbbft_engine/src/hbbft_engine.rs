@@ -169,15 +169,15 @@ impl HoneyBadgerBFT {
 					Target::Node(n) => {
 						// for debugging
 						// println!("Sending targeted message: {:?}", m.message);
-						client.send_consensus_message(ser, n, None);
+						client.send_consensus_message(ser, Some(n));
 					}
 					Target::All => {
 						// for debugging
 						// println!("Sending broadcast message: {:?}", m.message);
 
 						if let Some(ref net_info) = *self.network_info.read() {
-							for peer_id in net_info.all_ids().filter(|p| p != &net_info.our_id()) {
-								client.send_consensus_message(ser.clone(), *peer_id, None);
+							for node_id in net_info.all_ids().filter(|p| p != &net_info.our_id()) {
+								client.send_consensus_message(ser.clone(), Some(*node_id));
 							}
 						} else {
 							panic!("Network Info expected to be initialized");

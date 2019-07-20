@@ -960,7 +960,7 @@ impl super::traits::EngineClient for TestBlockChainClient {
 
 	fn broadcast_consensus_message(&self, _message: Bytes) {}
 
-	fn send_consensus_message(&self, _message: Bytes, _peer_id: H512, _node_id: Option<H512>) {
+	fn send_consensus_message(&self, _message: Bytes, _node_id: Option<H512>) {
 		// TODO: allow test to intercept the message to relay it to other test clients
 	}
 

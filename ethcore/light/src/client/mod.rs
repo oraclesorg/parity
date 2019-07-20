@@ -633,7 +633,7 @@ impl<T: ChainDataFetcher> ::ethcore::client::EngineClient for Client<T> {
 	fn update_sealing(&self) { }
 	fn submit_seal(&self, _block_hash: H256, _seal: Vec<Vec<u8>>) { }
 	fn broadcast_consensus_message(&self, _message: Vec<u8>) { }
-	fn send_consensus_message(&self, _message: Vec<u8>, _peer_id: H512, _node_id: Option<H512>) { }
+	fn send_consensus_message(&self, _message: Vec<u8>, _node_id: Option<H512>) { }
 
 	fn epoch_transition_for(&self, parent_hash: H256) -> Option<EpochTransition> {
 		self.chain.epoch_transition_for(parent_hash).map(|(hdr, proof)| EpochTransition {

@@ -504,7 +504,7 @@ pub struct TestNotify {
 	/// Messages store
 	pub messages: RwLock<Vec<Bytes>>,
 	/// Targeted messages store
-	pub targeted_messages: RwLock<Vec<(Bytes, H512)>>,
+	pub targeted_messages: RwLock<Vec<(Bytes, Option<H512>)>>,
 }
 
 impl ChainNotify for TestNotify {
@@ -517,12 +517,12 @@ impl ChainNotify for TestNotify {
 		self.messages.write().push(data);
 	}
 
-	fn send(&self, message: ChainMessageType, peer_id: H512, _node_id: Option<H512>) {
+	fn send(&self, message: ChainMessageType, node_id: Option<H512>) {
 		let data = match message {
 			ChainMessageType::Consensus(data) => data,
 			ChainMessageType::SignedPrivateTransaction(_, data) => data,
 			ChainMessageType::PrivateTransaction(_, data) => data,
 		};
-		self.targeted_messages.write().push((data, peer_id));
+		self.targeted_messages.write().push((data, node_id));
 	}
 }
