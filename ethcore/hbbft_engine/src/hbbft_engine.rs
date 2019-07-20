@@ -136,9 +136,8 @@ impl HoneyBadgerBFT {
 
 	fn process_message(
 		&self,
-		sender_id: NodeId,
 		message: Message,
-		_node_id: Option<H512>,
+		sender_id: NodeId,
 	) -> Result<(), EngineError> {
 		let client = self
 			.client
@@ -306,12 +305,16 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 	fn handle_message(
 		&self,
 		message: &[u8],
-		peer_id: H512,
 		node_id: Option<H512>,
 	) -> Result<(), EngineError> {
-		match serde_json::from_slice(message) {
-			Ok(decoded_message) => self.process_message(peer_id, decoded_message, node_id),
-			_ => Err(EngineError::UnexpectedMessage),
+		match node_id {
+			Some(node_id) => {
+				match serde_json::from_slice(message) {
+					Ok(decoded_message) => self.process_message(decoded_message, node_id),
+					_ => Err(EngineError::UnexpectedMessage),
+				}
+			},
+			None => Err(EngineError::UnexpectedMessage),
 		}
 	}
 

@@ -197,7 +197,7 @@ pub trait IoClient: Sync + Send {
 	fn queue_ancient_block(&self, block_bytes: Unverified, receipts_bytes: Bytes) -> EthcoreResult<H256>;
 
 	/// Queue conensus engine message.
-	fn queue_consensus_message(&self, message: Bytes, peer_id: H512, node_id: Option<H512>);
+	fn queue_consensus_message(&self, message: Bytes, node_id: Option<H512>);
 }
 
 /// Provides recently seen bad blocks.
