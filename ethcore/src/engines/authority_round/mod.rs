@@ -1155,7 +1155,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		SealingState::Ready
 	}
 
-	fn handle_message(&self, rlp: &[u8], _peer_id: H512, _node_id: Option<H512>) -> Result<(), EngineError> {
+	fn handle_message(&self, rlp: &[u8], _node_id: Option<H512>) -> Result<(), EngineError> {
 		fn fmt_err<T: ::std::fmt::Debug>(x: T) -> EngineError {
 			EngineError::MalformedMessage(format!("{:?}", x))
 		}

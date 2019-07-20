@@ -152,7 +152,7 @@ mod tests {
 					.expect("Message target not found in nodes map")
 					.client
 					.engine()
-					.handle_message(&m.0, *from, None)
+					.handle_message(&m.0, Some(*from))
 					.expect("message handling to succeed");
 			}
 			n.notify.targeted_messages.write().clear();
