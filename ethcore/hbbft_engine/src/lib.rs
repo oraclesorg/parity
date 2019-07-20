@@ -148,12 +148,12 @@ mod tests {
 		for (from, n) in nodes.iter() {
 			for m in n.notify.targeted_messages.write().iter() {
 				nodes
-					.get(&m.1)
+					.get(&m.1.expect("The Message target node id must be set"))
 					.expect("Message target not found in nodes map")
 					.client
 					.engine()
 					.handle_message(&m.0, Some(*from))
-					.expect("message handling to succeed");
+					.expect("Message handling to succeed");
 			}
 			n.notify.targeted_messages.write().clear();
 		}
