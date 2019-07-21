@@ -127,18 +127,17 @@ impl HoneyBadgerBFT {
 		client.create_pending_block(batch_txns, timestamp);
 		client.update_sealing();
 
+		// The following section is commented out since the transaction queue returned by the
+		// EngineClient trait can actually still contain transactions we just submitted at this point.
+		// We need to find a better place to join the next epoch:
 		// Start a new epoch immediately if the transaction queue
 		// is longer than the configured threshold.
-		if client.queued_transactions().len() >= self.transactions_trigger {
-			self.start_hbbft_epoch(client);
-		}
+		//		if client.queued_transactions().len() >= self.transactions_trigger {
+		//			self.start_hbbft_epoch(client);
+		//		}
 	}
 
-	fn process_message(
-		&self,
-		message: Message,
-		sender_id: NodeId,
-	) -> Result<(), EngineError> {
+	fn process_message(&self, message: Message, sender_id: NodeId) -> Result<(), EngineError> {
 		let client = self
 			.client
 			.read()
@@ -302,17 +301,11 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		}
 	}
 
-	fn handle_message(
-		&self,
-		message: &[u8],
-		node_id: Option<H512>,
-	) -> Result<(), EngineError> {
+	fn handle_message(&self, message: &[u8], node_id: Option<H512>) -> Result<(), EngineError> {
 		match node_id {
-			Some(node_id) => {
-				match serde_json::from_slice(message) {
-					Ok(decoded_message) => self.process_message(decoded_message, node_id),
-					_ => Err(EngineError::UnexpectedMessage),
-				}
+			Some(node_id) => match serde_json::from_slice(message) {
+				Ok(decoded_message) => self.process_message(decoded_message, node_id),
+				_ => Err(EngineError::UnexpectedMessage),
 			},
 			None => Err(EngineError::UnexpectedMessage),
 		}
