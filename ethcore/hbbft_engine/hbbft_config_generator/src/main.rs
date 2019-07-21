@@ -15,7 +15,6 @@ use rustc_hex::ToHex;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
-use std::ops::Range;
 use toml::{map::Map, Value};
 
 fn create_account() -> (Secret, Public) {
@@ -28,29 +27,31 @@ fn create_account() -> (Secret, Public) {
 struct Enode {
 	secret: Secret,
 	public: Public,
-	ip_address: String,
+	idx: usize,
 }
 
 impl ToString for Enode {
 	fn to_string(&self) -> String {
 		// Example:
 		// enode://30ccdeb8c31972f570e4eea0673cd08cbe7cefc5de1d70119b39c63b1cba33b48e494e9916c0d1eab7d296774f3573da46025d1accdef2f3690bc9e6659a34b4@192.168.0.101:30300
-		format!("enode://{:x}@{}", self.public, self.ip_address)
+		let base_port = 30300usize;
+		let ip_address = format!("127.0.0.1:{}", base_port + self.idx);
+		format!("enode://{:x}@{}", self.public, ip_address)
 	}
 }
 
-fn generate_enodes(ids: Range<usize>) -> BTreeMap<usize, Enode> {
-	let base_port = 30300usize;
+fn generate_enodes(num_nodes: usize) -> BTreeMap<Public, Enode> {
 	let mut map = BTreeMap::new();
-	for (i, n) in ids.into_iter().enumerate() {
-		let ip_address = format!("127.0.0.1:{}", base_port + i + 1);
+	for i in 0..num_nodes {
+		// Note: node 0 is a regular full node (not a validator) in the testnet setup, so we start at index 1.
+		let idx = i + 1;
 		let (secret, public) = create_account();
 		map.insert(
-			n,
+			public,
 			Enode {
 				secret,
 				public,
-				ip_address,
+				idx,
 			},
 		);
 	}
@@ -210,20 +211,21 @@ fn main() {
 		.expect("Input must be of integer type");
 	println!("Number of config files to generate: {}", num_nodes);
 
+	let enodes_map = generate_enodes(num_nodes);
 	let mut rng = rand::thread_rng();
-	let net_infos = NetworkInfo::generate_map(0..num_nodes, &mut rng)
-		.expect("NetworkInfo generation expected to succeed");
-	let enodes_map = generate_enodes(0..num_nodes);
+	let net_infos =
+		NetworkInfo::generate_map(enodes_map.keys().cloned().collect::<Vec<_>>(), &mut rng)
+			.expect("NetworkInfo generation expected to succeed");
 
-	for (i, (n, info)) in net_infos.iter().enumerate() {
-		// Note: node 0 is a regular full node (not a validator) in the testnet setup, so we start at index 1.
-		let file_name = format!("hbbft_validator_{}.toml", i + 1);
-		let toml_string = toml::to_string(&to_toml(info, &enodes_map, i + 1))
+	for (n, info) in net_infos.iter() {
+		let enode = enodes_map.get(n).expect("validator id must be mapped");
+		let i = enode.idx;
+		let file_name = format!("hbbft_validator_{}.toml", i);
+		let toml_string = toml::to_string(&to_toml(info, &enodes_map, i))
 			.expect("TOML string generation should succeed");
 		fs::write(file_name, toml_string).expect("Unable to write config file");
 
-		let file_name = format!("hbbft_validator_key{}", i + 1);
-		let enode = enodes_map.get(n).expect("validator id must be mapped");
+		let file_name = format!("hbbft_validator_key{}", i);
 		fs::write(file_name, enode.secret.to_hex()).expect("Unable to write config file");
 	}
 }
@@ -272,10 +274,12 @@ mod tests {
 	#[test]
 	fn test_network_info_serde() {
 		let mut rng = rand::thread_rng();
-		let net_infos = NetworkInfo::generate_map(0..1usize, &mut rng).unwrap();
-		let enodes_map = generate_enodes(0..1usize);
-		let net_info = net_infos.get(&0).unwrap();
-		let toml_string = toml::to_string(&to_toml(&net_info, &enodes_map, 0)).unwrap();
+		let enodes_map = generate_enodes(1);
+		let net_infos =
+			NetworkInfo::generate_map(enodes_map.keys().cloned().collect::<Vec<_>>(), &mut rng)
+				.unwrap();
+		let net_info = net_infos.iter().nth(0).unwrap().1;
+		let toml_string = toml::to_string(&to_toml(net_info, &enodes_map, 1)).unwrap();
 		let config: TomlHbbftOptions = toml::from_str(&toml_string).unwrap();
 		compare(net_info, &config);
 	}
