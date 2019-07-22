@@ -34,9 +34,8 @@ impl ToString for Enode {
 	fn to_string(&self) -> String {
 		// Example:
 		// enode://30ccdeb8c31972f570e4eea0673cd08cbe7cefc5de1d70119b39c63b1cba33b48e494e9916c0d1eab7d296774f3573da46025d1accdef2f3690bc9e6659a34b4@192.168.0.101:30300
-		let base_port = 30300usize;
-		let ip_address = format!("127.0.0.1:{}", base_port + self.idx);
-		format!("enode://{:x}@{}", self.public, ip_address)
+		let port = 30300usize + self.idx;
+		format!("enode://{:x}@127.0.0.1:{}", self.public, port)
 	}
 }
 
@@ -225,7 +224,7 @@ fn main() {
 			.expect("TOML string generation should succeed");
 		fs::write(file_name, toml_string).expect("Unable to write config file");
 
-		let file_name = format!("hbbft_validator_key{}", i);
+		let file_name = format!("hbbft_validator_key_{}", i);
 		fs::write(file_name, enode.secret.to_hex()).expect("Unable to write config file");
 	}
 }
@@ -275,9 +274,7 @@ mod tests {
 	fn test_network_info_serde() {
 		let mut rng = rand::thread_rng();
 		let enodes_map = generate_enodes(1);
-		let net_infos =
-			NetworkInfo::generate_map(enodes_map.keys().cloned().collect::<Vec<_>>(), &mut rng)
-				.unwrap();
+		let net_infos = NetworkInfo::generate_map(enodes_map.keys().cloned(), &mut rng).unwrap();
 		let net_info = net_infos.iter().nth(0).unwrap().1;
 		let toml_string = toml::to_string(&to_toml(net_info, &enodes_map, 1)).unwrap();
 		let config: TomlHbbftOptions = toml::from_str(&toml_string).unwrap();

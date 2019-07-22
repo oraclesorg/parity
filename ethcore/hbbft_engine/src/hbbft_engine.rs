@@ -305,7 +305,9 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		match node_id {
 			Some(node_id) => match serde_json::from_slice(message) {
 				Ok(decoded_message) => self.process_message(decoded_message, node_id),
-				_ => Err(EngineError::UnexpectedMessage),
+				_ => Err(EngineError::MalformedMessage(
+					"Serde decoding failed.".into(),
+				)),
 			},
 			None => Err(EngineError::UnexpectedMessage),
 		}
