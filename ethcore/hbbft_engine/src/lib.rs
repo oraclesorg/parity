@@ -93,20 +93,18 @@ mod tests {
 	}
 
 	fn generate_ids(num_ids: usize) -> Vec<Public> {
-		let mut ids = Vec::new();
-		for _ in 0..num_ids {
-			ids.push(
+		(0..num_ids)
+			.into_iter()
+			.map(|_| {
 				*Random
 					.generate()
 					.expect("H512 has generation capabilities")
-					.public(),
-			);
-		}
-		ids
+					.public()
+			})
+			.collect()
 	}
 
-	// Returns `true` if the node has not output all transactions yet.
-	// If it has, and has advanced another epoch, it clears all messages for later epochs.
+	// Returns `true` if the node has any unsent messages left.
 	fn has_messages(node: &HbbftTestData) -> bool {
 		!node.notify.targeted_messages.read().is_empty()
 	}
@@ -145,8 +143,8 @@ mod tests {
 	}
 
 	fn crank_network_single_step(nodes: &BTreeMap<Public, HbbftTestData>) {
-		for (from, n) in nodes.iter() {
-			for m in n.notify.targeted_messages.write().iter() {
+		for (from, n) in nodes {
+			for m in n.notify.targeted_messages.write().drain(..) {
 				nodes
 					.get(&m.1.expect("The Message target node id must be set"))
 					.expect("Message target not found in nodes map")
@@ -155,7 +153,6 @@ mod tests {
 					.handle_message(&m.0, Some(*from))
 					.expect("Message handling to succeed");
 			}
-			n.notify.targeted_messages.write().clear();
 		}
 	}
 
