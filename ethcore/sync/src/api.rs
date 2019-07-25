@@ -600,7 +600,7 @@ impl ChainNotify for EthSync {
 			});
 
 			let my_peer_id = match target_peer_id {
-				None => unimplemented!("TODO: needs to be added to cache"),
+				None => { warn!(target:"sync", "TODO: needs to be added to cache"); return; }
 				Some(n) => n,
 			};
 
