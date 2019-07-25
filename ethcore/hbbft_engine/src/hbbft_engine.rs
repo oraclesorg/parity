@@ -1,6 +1,6 @@
 use crate::contribution::Contribution;
 use ethcore::block::ExecutedBlock;
-use ethcore::client::EngineClient;
+use ethcore::client::{ EngineClient, BlockId };
 use ethcore::engines::signer::EngineSigner;
 use ethcore::engines::{
 	total_difficulty_fork_choice, Engine, EngineError, EthEngine, ForkChoice, Seal, SealingState,
@@ -169,7 +169,7 @@ impl HoneyBadgerBFT {
 						// for debugging
 						// println!("Sending targeted message: {:?}", m.message);
 						client.send_consensus_message(ser, Some(n));
-					}
+					},
 					Target::All => {
 						// for debugging
 						// println!("Sending broadcast message: {:?}", m.message);
@@ -181,7 +181,16 @@ impl HoneyBadgerBFT {
 						} else {
 							panic!("Network Info expected to be initialized");
 						}
-					}
+					},
+					Target::AllExcept(set) => {
+						if let Some(ref net_info) = *self.network_info.read() {
+							for node_id in net_info.all_ids().filter(|p| (p != &net_info.our_id() && !set.contains(p))) {
+								client.send_consensus_message(ser.clone(), Some(*node_id));
+							}
+						} else {
+							panic!("Network Info expected to be initialized");
+						}
+					},
 				}
 			} else {
 				error!(target: "engine", "Serialization of consensus message failed!");
@@ -242,8 +251,17 @@ impl HoneyBadgerBFT {
 		}
 	}
 
+	fn skip_to_current_epoch(&self, client: &Arc<EngineClient>, honey_badger: &mut HoneyBadger) {
+		if let Some(block_number) = client.block_number(BlockId::Latest) {
+			honey_badger.skip_to_epoch(block_number);
+		} else {
+			error!(target: "engine", "The current chain latest block number could not be obtained.");
+		}
+	}
+
 	fn start_hbbft_epoch(&self, client: Arc<EngineClient>) {
 		if let Some(ref mut honey_badger) = *self.honey_badger.write() {
+			self.skip_to_current_epoch(&client, honey_badger);
 			if !honey_badger.has_input() {
 				self.send_contribution(client, honey_badger);
 			}

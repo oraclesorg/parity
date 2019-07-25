@@ -144,7 +144,8 @@ mod tests {
 
 	fn crank_network_single_step(nodes: &BTreeMap<Public, HbbftTestData>) {
 		for (from, n) in nodes {
-			for m in n.notify.targeted_messages.write().drain(..) {
+			let mut targeted_messages = n.notify.targeted_messages.write();
+			for m in targeted_messages.drain(..) {
 				nodes
 					.get(&m.1.expect("The Message target node id must be set"))
 					.expect("Message target not found in nodes map")

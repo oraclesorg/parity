@@ -20,7 +20,7 @@ keccak-hash = "0.1"
 ethcore = { path = ".." }
 ethereum-types = "0.4"
 ethcore-miner = { path = "../../miner" }
-hbbft = { git = "https://github.com/poanetwork/hbbft" }
+hbbft = { git = "https://github.com/poanetwork/hbbft", rev = "70783871150a125d366f02bdd415d27f7464e417" }
 hbbft_testing = { git = "https://github.com/poanetwork/hbbft" }
 ethkey = { path = "../../accounts/ethkey" }
 common-types = { path = "../types" }
