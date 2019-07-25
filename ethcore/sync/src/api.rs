@@ -590,9 +590,19 @@ impl ChainNotify for EthSync {
 	fn send(&self, _message_type: ChainMessageType, node_id: Option<H512>) {
 		self.network.with_context(WARP_SYNC_PROTOCOL_ID, |context| {
 			let peer_ids = self.network.connected_peers();
-			let node_ids = peer_ids.iter().map(|&x|context.session_info(x).unwrap().id).collect::<Vec<Option<H512>>>();
-			let index = node_ids.into_iter().position(|r| r == node_id).unwrap();
-			let my_peer_id = peer_ids[index];
+			let target_peer_id = peer_ids.into_iter().find(|p| {
+				match context.session_info(*p){
+					Some(session_info) => {
+						session_info.id == node_id
+					},
+					None => { warn!(target:"sync", "No session exists for peerId {:?}", p); false},
+				}
+			});
+
+			let my_peer_id = match target_peer_id {
+				None => { warn!(target:"sync", "TODO: needs to be added to cache"); return; }
+				Some(n) => n,
+			};
 
 			let mut sync_io = NetSyncIo::new(context, &*self.eth_handler.chain, &*self.eth_handler.snapshot_service, &self.eth_handler.overlay);
 			match _message_type {
