@@ -2972,7 +2972,7 @@ mod tests {
 
 	#[test]
 	fn should_mark_finalization_correctly_for_parent() {
-		let client = generate_dummy_client_with_spec_and_data(spec::new_test_with_finality, 2, 0, &[]);
+		let client = generate_dummy_client_with_spec_and_data(spec::new_test_with_finality, 2, 0, &[], false);
 		let chain = client.chain();
 
 		let block1_details = chain.block_hash(1).and_then(|h| chain.block_details(&h));

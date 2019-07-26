@@ -326,6 +326,13 @@ impl Miner {
 	///
 	/// NOTE This should be only used for tests.
 	pub fn new_for_tests(spec: &Spec, accounts: Option<HashSet<Address>>) -> Miner {
+		Miner::new_for_tests_force_sealing(spec, accounts, false)
+	}
+
+	/// Creates new instance of miner with given spec and accounts.
+	///
+	/// NOTE This should be only used for tests.
+	pub fn new_for_tests_force_sealing(spec: &Spec, accounts: Option<HashSet<Address>>, force_sealing: bool) -> Miner {
 		let minimal_gas_price = 0.into();
 		Miner::new(MinerOptions {
 			pool_verification_options: pool::verifier::Options {
@@ -335,6 +342,7 @@ impl Miner {
 				no_early_reject: false,
 			},
 			reseal_min_period: Duration::from_secs(0),
+			force_sealing,
 			..Default::default()
 		}, GasPricer::new_fixed(minimal_gas_price), spec, accounts.unwrap_or_default())
 	}
