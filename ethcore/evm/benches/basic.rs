@@ -69,11 +69,8 @@ criterion_group!(
 	mem_gas_calculation_same_u256,
 	mem_gas_calculation_increasing_usize,
 	mem_gas_calculation_increasing_u256,
-<<<<<<< HEAD
 	blockhash_mulmod_small,
 	blockhash_mulmod_large,
-=======
->>>>>>> e1743aebc... Optimisation of the MULMOD opcode (#127)
 );
 criterion_main!(basic);
 
