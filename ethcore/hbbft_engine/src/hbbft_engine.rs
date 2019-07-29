@@ -124,7 +124,7 @@ impl HoneyBadgerBFT {
 			.sorted();
 		let timestamp = timestamps[timestamps.len() / 2];
 
-		client.create_pending_block(batch_txns, timestamp);
+		client.create_pending_block_at(batch_txns, timestamp, batch.epoch);
 		client.update_sealing();
 
 		// The following section is commented out since the transaction queue returned by the
@@ -149,6 +149,7 @@ impl HoneyBadgerBFT {
 			.write()
 			.as_mut()
 			.and_then(|honey_badger: &mut HoneyBadger| {
+				self.skip_to_current_epoch(&client, honey_badger);
 				if let Ok(step) = honey_badger.handle_message(&sender_id, message) {
 					self.process_step(client, step);
 					self.join_hbbft_epoch(honey_badger);
@@ -252,8 +253,8 @@ impl HoneyBadgerBFT {
 	}
 
 	fn skip_to_current_epoch(&self, client: &Arc<EngineClient>, honey_badger: &mut HoneyBadger) {
-		if let Some(block_number) = client.block_number(BlockId::Latest) {
-			honey_badger.skip_to_epoch(block_number);
+		if let Some(parent_block_number) = client.block_number(BlockId::Latest) {
+			honey_badger.skip_to_epoch(parent_block_number + 1);
 		} else {
 			error!(target: "engine", "The current chain latest block number could not be obtained.");
 		}

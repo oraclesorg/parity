@@ -2505,8 +2505,8 @@ impl super::traits::EngineClient for Client {
 		self.importer.miner.queued_transactions()
 	}
 
-	fn create_pending_block(&self, txns: Vec<SignedTransaction>, timestamp: u64) -> Option<ClosedBlock> {
-		self.importer.miner.create_pending_block(self, txns, timestamp)
+	fn create_pending_block_at(&self, txns: Vec<SignedTransaction>, timestamp: u64, block_number: u64) -> Option<ClosedBlock> {
+		self.importer.miner.create_pending_block_at(self, txns, timestamp, block_number)
 	}
 
 	/// Returns the currently configured options for the hbbft consensus engine.
