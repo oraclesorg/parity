@@ -625,13 +625,19 @@ impl Miner {
 
 	/// Creates a new block and sets it as pending for sealing.
 	/// Returns false if a pending block already exists.
-	pub fn create_pending_block<C>(&self, chain: &C, txns: Vec<SignedTransaction>, timestamp: u64) -> Option<ClosedBlock>
+	pub fn create_pending_block_at<C>(&self, chain: &C, txns: Vec<SignedTransaction>, timestamp: u64, block_number: u64) -> Option<ClosedBlock>
 		where C: BlockChain + CallContract + BlockProducer + SealedBlockImporter + Nonce + Sync {
 		let mut sealing = self.sealing.lock();
 		let chain_info = chain.chain_info();
-		let best_hash = chain_info.best_block_hash;
+		let parent_block_number = block_number - 1;
+		let parent_header = if let Some(block_header) = chain.block_header(BlockId::Number(parent_block_number)) {
+			block_header
+		} else {
+			return None;
+		};
+		let parent_hash = parent_header.hash();
 
-		match sealing.queue.get_pending_if(|b| b.block().header().parent_hash() == &best_hash) {
+		match sealing.queue.get_pending_if(|b| b.block().header().parent_hash() == &parent_hash) {
 			Some(_) => {
 				trace!(target: "miner", "create_pending_block: Already have a pending block!");
 				None
@@ -640,8 +646,16 @@ impl Miner {
 				trace!(target: "miner", "create_pending_block: Making a new block");
 
 				let (mut open_block, engine_pending) = self.create_open_block(chain)?;
+				// Only proceed with blocks at the desired block number.
+				if open_block.header().number() != block_number {
+					return None
+				}
 
+				// Make sure the new timestamp is larger than the parent's timestamp.
+				let parent_timestamp = parent_header.timestamp();
+				let timestamp = cmp::max(timestamp, parent_timestamp + 1);
 				open_block.set_timestamp(timestamp);
+
 				let min_tx_gas: U256 = self.engine.schedule(chain_info.best_block_number).tx_gas.into();
 
 				// Add transactions to the new block

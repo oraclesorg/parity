@@ -660,7 +660,7 @@ impl<T: ChainDataFetcher> ::ethcore::client::EngineClient for Client<T> {
 		Vec::new()
 	}
 
-	fn create_pending_block(&self, _txns: Vec<SignedTransaction>, _timestamp: u64) -> Option<ClosedBlock> {
+	fn create_pending_block_at(&self, _txns: Vec<SignedTransaction>, _timestamp: u64, _block_number: u64) -> Option<ClosedBlock> {
 		warn!(target: "client", "No miner available in light clients.");
 		None
 	}
