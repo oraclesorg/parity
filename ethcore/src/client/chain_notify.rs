@@ -22,6 +22,7 @@ use std::time::Duration;
 use std::collections::HashMap;
 
 /// Messages to broadcast via chain
+#[derive(Clone, PartialEq)]
 pub enum ChainMessageType {
 	/// Consensus message
 	Consensus(Vec<u8>),
