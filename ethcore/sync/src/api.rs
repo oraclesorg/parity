@@ -364,6 +364,7 @@ impl EthSync {
 				chain: params.chain,
 				snapshot_service: params.snapshot_service,
 				overlay: RwLock::new(HashMap::new()),
+				message_cache: RwLock::new(HashMap::new()),
 			}),
 			light_proto: light_proto,
 			subprotocol_name: params.config.subprotocol_name,
@@ -439,6 +440,8 @@ struct SyncProtocolHandler {
 	sync: ChainSyncApi,
 	/// Chain overlay used to cache data such as fork block.
 	overlay: RwLock<HashMap<BlockNumber, Bytes>>,
+	/// Cache of all messages that could not be sent
+	message_cache: RwLock<HashMap<Option<H512>, Vec<ChainMessageType>>>,
 }
 
 impl NetworkProtocolHandler for SyncProtocolHandler {
@@ -465,6 +468,20 @@ impl NetworkProtocolHandler for SyncProtocolHandler {
 		let warp_context = io.subprotocol_name() == WARP_SYNC_PROTOCOL_ID;
 		if warp_protocol == warp_context {
 			self.sync.write().on_peer_connected(&mut NetSyncIo::new(io, &*self.chain, &*self.snapshot_service, &self.overlay), *peer);
+		}
+		// now since we are connected, lets send any cached messages also
+		let node_id = io.session_info(*peer).unwrap().id;
+		let mut sync_io = NetSyncIo::new(io, &*self.chain, &*self.snapshot_service, &self.overlay);
+		if let Some(vec_msg) = self.message_cache.write().remove(&node_id) {
+			for msg in vec_msg {
+				match msg {
+					ChainMessageType::Consensus(message) => self.sync.write().send_consensus_packet(&mut sync_io, message, *peer),
+					ChainMessageType::PrivateTransaction(_transaction_hash, _message) =>
+						unimplemented!("TODO: privateTransaction not supported on send."),
+					ChainMessageType::SignedPrivateTransaction(_transaction_hash, _message) =>
+						unimplemented!("TODO: SignedPrivateTransaction not supported on send."),
+				}
+			}
 		}
 	}
 
@@ -587,7 +604,7 @@ impl ChainNotify for EthSync {
 		});
 	}
 
-	fn send(&self, _message_type: ChainMessageType, node_id: Option<H512>) {
+	fn send(&self, message_type: ChainMessageType, node_id: Option<H512>) {
 		self.network.with_context(WARP_SYNC_PROTOCOL_ID, |context| {
 			let peer_ids = self.network.connected_peers();
 			let target_peer_id = peer_ids.into_iter().find(|p| {
@@ -600,15 +617,20 @@ impl ChainNotify for EthSync {
 			});
 
 			let my_peer_id = match target_peer_id {
-				None => { warn!(target:"sync", "TODO: needs to be added to cache"); return; }
+				None => { 
+					let mut lock = self.eth_handler.message_cache.write();
+					lock.entry(node_id.clone()).or_default().push(message_type);
+					return; 
+				}
 				Some(n) => n,
 			};
 
 			let mut sync_io = NetSyncIo::new(context, &*self.eth_handler.chain, &*self.eth_handler.snapshot_service, &self.eth_handler.overlay);
-			match _message_type {
+
+			match message_type {
 				ChainMessageType::Consensus(message) => self.eth_handler.sync.write().send_consensus_packet(&mut sync_io, message, my_peer_id),
 				ChainMessageType::PrivateTransaction(_transaction_hash, _message) =>
-					unimplemented!("TODO: privateTransaction not supported on send."),
+					unimplemented!("TODO: PrivateTransaction not supported on send."),
 				ChainMessageType::SignedPrivateTransaction(_transaction_hash, _message) =>
 					unimplemented!("TODO: SignedPrivateTransaction not supported on send."),
 			}
