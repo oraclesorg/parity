@@ -267,7 +267,8 @@ impl HoneyBadgerBFT {
 				self.send_contribution(client, honey_badger);
 			}
 		} else {
-			error!(target: "engine", "Attempt to start an epoch without the honey badger algorithm being set.");
+			// The Honey Badger algorithm is expected not to be available on non-validator nodes.
+			// error!(target: "engine", "Attempt to start an epoch without the honey badger algorithm being set.");
 		}
 	}
 }
