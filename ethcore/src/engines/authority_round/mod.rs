@@ -1428,6 +1428,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 	/// Make calls to the randomness and validator set contracts.
 	fn on_prepare_block(&self, block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> {
+		const SIBLING_MALICE_DETECTION_PERIOD: u64 = 100;
 		let client = self.client.read().as_ref().and_then(|weak| weak.upgrade()).ok_or_else(|| {
 			debug!(target: "engine", "Unable to prepare block: missing client ref.");
 			EngineError::RequiresClient
@@ -1436,7 +1437,10 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			.ok_or_else(|| EngineError::FailedSystemCall("Failed to upgrade to BlockchainClient.".to_string()))?;
 
 		// Remove older block hash records.
-		let oldest_block_number = full_client.best_block_header().number().saturating_sub(100);
+		let oldest_block_number = full_client
+			.best_block_header()
+			.number()
+			.saturating_sub(SIBLING_MALICE_DETECTION_PERIOD);
 		let keys_to_remove: Vec<_> = self
 			.received_block_hashes
 			.read()
