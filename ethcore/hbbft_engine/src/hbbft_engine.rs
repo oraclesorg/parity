@@ -1,6 +1,6 @@
 use crate::contribution::Contribution;
 use ethcore::block::ExecutedBlock;
-use ethcore::client::{ EngineClient, BlockId };
+use ethcore::client::{BlockId, EngineClient};
 use ethcore::engines::signer::EngineSigner;
 use ethcore::engines::{
 	total_difficulty_fork_choice, Engine, EngineError, EthEngine, ForkChoice, Seal, SealingState,
@@ -16,6 +16,7 @@ use hbbft::{NetworkInfo, Target};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use rlp::{Decodable, Rlp};
+use serde::Deserialize;
 use serde_json;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
@@ -28,28 +29,39 @@ type Message = hbbft::honey_badger::Message<NodeId>;
 type Batch = hbbft::honey_badger::Batch<Contribution, NodeId>;
 type TargetedMessage = hbbft::TargetedMessage<Message, NodeId>;
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+struct HoneyBadgerOptions {
+	pub minimum_block_time: u64,
+	pub transaction_queue_size_trigger: usize,
+}
+
 pub struct HoneyBadgerBFT {
 	client: Arc<RwLock<Option<Weak<EngineClient>>>>,
 	signer: RwLock<Option<Box<EngineSigner>>>,
 	machine: EthereumMachine,
-	transactions_trigger: usize,
 	network_info: RwLock<Option<NetworkInfo<NodeId>>>,
 	honey_badger: RwLock<Option<HoneyBadger>>,
+	options: HoneyBadgerOptions,
 }
 
 impl HoneyBadgerBFT {
 	pub fn new(
-		_params: &serde_json::Value,
+		params: &serde_json::Value,
 		machine: EthereumMachine,
 	) -> Result<Arc<EthEngine>, Box<Error>> {
+		let options = match HoneyBadgerOptions::deserialize(params) {
+			Ok(options) => options,
+			Err(e) => panic!("HoneyBadgerBFTParams: Invalid chain spec options\n{}", e)
+		};
 		let engine = Arc::new(HoneyBadgerBFT {
 			client: Arc::new(RwLock::new(None)),
 			signer: RwLock::new(None),
-			machine: machine,
-			// TODO: configure through spec params
-			transactions_trigger: 1,
+			machine,
 			network_info: RwLock::new(None),
 			honey_badger: RwLock::new(None),
+			options,
 		});
 		Ok(engine)
 	}
@@ -170,7 +182,7 @@ impl HoneyBadgerBFT {
 						// for debugging
 						// println!("Sending targeted message: {:?}", m.message);
 						client.send_consensus_message(ser, Some(n));
-					},
+					}
 					Target::All => {
 						// for debugging
 						// println!("Sending broadcast message: {:?}", m.message);
@@ -182,16 +194,19 @@ impl HoneyBadgerBFT {
 						} else {
 							panic!("Network Info expected to be initialized");
 						}
-					},
+					}
 					Target::AllExcept(set) => {
 						if let Some(ref net_info) = *self.network_info.read() {
-							for node_id in net_info.all_ids().filter(|p| (p != &net_info.our_id() && !set.contains(p))) {
+							for node_id in net_info
+								.all_ids()
+								.filter(|p| (p != &net_info.our_id() && !set.contains(p)))
+							{
 								client.send_consensus_message(ser.clone(), Some(*node_id));
 							}
 						} else {
 							panic!("Network Info expected to be initialized");
 						}
-					},
+					}
 				}
 			} else {
 				error!(target: "engine", "Serialization of consensus message failed!");
@@ -314,7 +329,7 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 	fn on_transactions_imported(&self) {
 		if let Some(ref weak) = *self.client.read() {
 			if let Some(client) = weak.upgrade() {
-				if client.queued_transactions().len() >= self.transactions_trigger {
+				if client.queued_transactions().len() >= self.options.transaction_queue_size_trigger {
 					self.start_hbbft_epoch(client);
 				}
 			}
