@@ -1,22 +1,24 @@
 use crate::contribution::{unix_now_millis, unix_now_secs, Contribution};
+use crate::sealing::{self, Sealing};
+use crate::NodeId;
 use ethcore::block::ExecutedBlock;
 use ethcore::client::{BlockId, EngineClient};
 use ethcore::engines::signer::EngineSigner;
 use ethcore::engines::{
 	total_difficulty_fork_choice, Engine, EngineError, EthEngine, ForkChoice, Seal, SealingState,
 };
-use ethcore::error::Error;
+use ethcore::error::{BlockError, Error};
 use ethcore::machine::EthereumMachine;
 use ethcore::miner::HbbftOptions;
 use ethereum_types::H512;
-use ethkey::Public;
-use hbbft::crypto::{serde_impl::SerdeSecret, PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
-use hbbft::honey_badger::{HoneyBadgerBuilder, Step};
+use hbbft::crypto::serde_impl::SerdeSecret;
+use hbbft::crypto::{PublicKey, PublicKeySet, SecretKey, SecretKeyShare, Signature};
+use hbbft::honey_badger::{self, HoneyBadgerBuilder, Step};
 use hbbft::{NetworkInfo, Target};
 use io::{IoContext, IoHandler, IoService, TimerToken};
 use itertools::Itertools;
 use parking_lot::RwLock;
-use rlp::{Decodable, Rlp};
+use rlp::{self, Decodable, Rlp};
 use serde::Deserialize;
 use serde_json;
 use std::collections::BTreeMap;
@@ -25,12 +27,21 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 use types::header::{ExtendedHeader, Header};
 use types::transaction::SignedTransaction;
+use types::BlockNumber;
 
-type NodeId = Public;
-type HoneyBadger = hbbft::honey_badger::HoneyBadger<Contribution, NodeId>;
-type Message = hbbft::honey_badger::Message<NodeId>;
-type Batch = hbbft::honey_badger::Batch<Contribution, NodeId>;
+type HoneyBadger = honey_badger::HoneyBadger<Contribution, NodeId>;
+type Batch = honey_badger::Batch<Contribution, NodeId>;
 type TargetedMessage = hbbft::TargetedMessage<Message, NodeId>;
+type HbMessage = honey_badger::Message<NodeId>;
+
+/// A message sent between validators that is part of Honey Badger BFT or the block sealing process.
+#[derive(Deserialize, Serialize)]
+enum Message {
+	/// A Honey Badger BFT message.
+	HoneyBadger(HbMessage),
+	/// A threshold signature share. The combined signature is used as the block seal.
+	Sealing(BlockNumber, sealing::Message),
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -46,11 +57,12 @@ struct HoneyBadgerOptions {
 
 pub struct HoneyBadgerBFT {
 	transition_service: IoService<()>,
-	client: Arc<RwLock<Option<Weak<EngineClient>>>>,
-	signer: RwLock<Option<Box<EngineSigner>>>,
+	client: Arc<RwLock<Option<Weak<dyn EngineClient>>>>,
+	signer: RwLock<Option<Box<dyn EngineSigner>>>,
 	machine: EthereumMachine,
 	network_info: RwLock<Option<NetworkInfo<NodeId>>>,
 	honey_badger: RwLock<Option<HoneyBadger>>,
+	sealing: RwLock<BTreeMap<BlockNumber, Sealing>>,
 	options: HoneyBadgerOptions,
 }
 
@@ -64,7 +76,7 @@ const DEFAULT_DURATION: Duration = Duration::from_secs(1);
 impl TransitionHandler {
 	/// Returns the approximate time duration between the latest block and the minimum block time
 	/// or a keep-alive time duration of 1s.
-	fn duration_remaining_since_last_block(&self, client: Arc<EngineClient>) -> Duration {
+	fn duration_remaining_since_last_block(&self, client: Arc<dyn EngineClient>) -> Duration {
 		if let Some(block_header) = client.block_header(BlockId::Latest) {
 			// The block timestamp and minimum block time are specified in seconds.
 			let next_block_time =
@@ -110,6 +122,7 @@ impl IoHandler<()> for TransitionHandler {
 	fn timeout(&self, io: &IoContext<()>, timer: TimerToken) {
 		if timer == ENGINE_TIMEOUT_TOKEN {
 			// The block may be complete, but not have been ready to seal - trigger a new seal attempt.
+			// TODO: In theory, that should not happen. The seal is ready exactly when the sealing entry is `Complete`.
 			if let Some(ref weak) = *self.client.read() {
 				if let Some(c) = weak.upgrade() {
 					c.update_sealing();
@@ -140,7 +153,7 @@ impl HoneyBadgerBFT {
 	pub fn new(
 		params: &serde_json::Value,
 		machine: EthereumMachine,
-	) -> Result<Arc<EthEngine>, Box<Error>> {
+	) -> Result<Arc<dyn EthEngine>, Box<Error>> {
 		let options = match HoneyBadgerOptions::deserialize(params) {
 			Ok(options) => options,
 			Err(e) => panic!("HoneyBadgerBFTParams: Invalid chain spec options\n{}", e),
@@ -152,6 +165,7 @@ impl HoneyBadgerBFT {
 			machine,
 			network_info: RwLock::new(None),
 			honey_badger: RwLock::new(None),
+			sealing: RwLock::new(BTreeMap::new()),
 			options,
 		});
 
@@ -189,25 +203,23 @@ impl HoneyBadgerBFT {
 	}
 
 	fn new_honey_badger(&self) -> Option<HoneyBadger> {
-		if let Some(ref weak) = *self.client.read() {
-			if let Some(client) = weak.upgrade() {
-				// TODO: Retrieve the information to build a node-specific NetworkInfo
-				//       struct from the chain spec and from contracts.
-				let options = client.hbbft_options().expect("hbbft options have to exist");
-				if let Some(net_info) = HoneyBadgerBFT::new_network_info(options) {
-					let mut builder: HoneyBadgerBuilder<Contribution, _> =
-						HoneyBadger::builder(Arc::new(net_info.clone()));
-					*self.network_info.write() = Some(net_info);
-					return Some(builder.build());
-				} else {
-					return None;
-				}
+		if let Some(client) = self.client_arc() {
+			// TODO: Retrieve the information to build a node-specific NetworkInfo
+			//       struct from the chain spec and from contracts.
+			let options = client.hbbft_options().expect("hbbft options have to exist");
+			if let Some(net_info) = HoneyBadgerBFT::new_network_info(options) {
+				let mut builder: HoneyBadgerBuilder<Contribution, _> =
+					HoneyBadger::builder(Arc::new(net_info.clone()));
+				*self.network_info.write() = Some(net_info);
+				return Some(builder.build());
+			} else {
+				return None;
 			}
 		}
 		None
 	}
 
-	fn process_output(&self, client: Arc<EngineClient>, output: Vec<Batch>) {
+	fn process_output(&self, client: Arc<dyn EngineClient>, output: Vec<Batch>) {
 		// TODO: Multiple outputs are possible,
 		//       process all outputs, respecting their epoch context.
 		let batch = match output.first() {
@@ -239,8 +251,26 @@ impl HoneyBadgerBFT {
 			.sorted();
 		let timestamp = timestamps[timestamps.len() / 2];
 
-		client.create_pending_block_at(batch_txns, timestamp, batch.epoch);
-		client.update_sealing();
+		if let Some(block) = client.create_pending_block_at(batch_txns, timestamp, batch.epoch) {
+			let block_num = block.header.number();
+			let hash = block.header.bare_hash();
+			trace!(target: "engine", "Sending signature share of {} for block {}", hash, block_num);
+			let step = match self
+				.sealing
+				.write()
+				.entry(block_num)
+				.or_insert_with(|| self.new_sealing())
+				.sign(hash)
+			{
+				Ok(step) => step,
+				Err(err) => {
+					// TODO: Error handling
+					error!(target: "engine", "Error creating signature share for block {}: {:?}", block_num, err);
+					return;
+				}
+			};
+			self.process_seal_step(client, step, block_num);
+		}
 
 		// The following section is commented out since the transaction queue returned by the
 		// EngineClient trait can actually still contain transactions we just submitted at this point.
@@ -252,18 +282,13 @@ impl HoneyBadgerBFT {
 		//		}
 	}
 
-	fn process_message(&self, message: Message, sender_id: NodeId) -> Result<(), EngineError> {
-		let client = self
-			.client
-			.read()
-			.as_ref()
-			.and_then(|weak| weak.upgrade())
-			.ok_or(EngineError::RequiresClient)?;
+	fn process_hb_message(&self, message: HbMessage, sender_id: NodeId) -> Result<(), EngineError> {
+		let client = self.client_arc().ok_or(EngineError::RequiresClient)?;
 
 		self.honey_badger
 			.write()
 			.as_mut()
-			.and_then(|honey_badger: &mut HoneyBadger| {
+			.map(|honey_badger: &mut HoneyBadger| {
 				self.skip_to_current_epoch(&client, honey_badger);
 				if let Ok(step) = honey_badger.handle_message(&sender_id, message) {
 					self.process_step(client, step);
@@ -272,12 +297,41 @@ impl HoneyBadgerBFT {
 					// TODO: Report consensus step errors
 					error!(target: "engine", "Error on HoneyBadger consensus step");
 				}
-				Some(())
 			})
 			.ok_or(EngineError::InvalidEngine)
 	}
 
-	fn dispatch_messages(&self, client: &Arc<EngineClient>, messages: Vec<TargetedMessage>) {
+	fn process_sealing_message(
+		&self,
+		message: sealing::Message,
+		sender_id: NodeId,
+		block_num: BlockNumber,
+	) -> Result<(), EngineError> {
+		let client = self.client_arc().ok_or(EngineError::RequiresClient)?;
+		if let Some(latest) = client.block_number(BlockId::Latest) {
+			if latest >= block_num {
+				return Ok(()); // Message is obsolete.
+			}
+		}
+
+		trace!(target: "engine", "Received signature share for block {} from {}", block_num, sender_id);
+		let step_result = self
+			.sealing
+			.write()
+			.entry(block_num)
+			.or_insert_with(|| self.new_sealing())
+			.handle_message(&sender_id, message);
+		match step_result {
+			Ok(step) => self.process_seal_step(client, step, block_num),
+			Err(err) => error!(target: "engine", "Error on ThresholdSign step: {:?}", err), // TODO: Errors
+		}
+		Ok(())
+	}
+
+	fn dispatch_messages<I>(&self, client: &Arc<dyn EngineClient>, messages: I)
+	where
+		I: IntoIterator<Item = TargetedMessage>,
+	{
 		for m in messages {
 			if let Ok(ser) = serde_json::to_vec(&m.message) {
 				match m.target {
@@ -318,12 +372,35 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn process_step(&self, client: Arc<EngineClient>, step: Step<Contribution, NodeId>) {
-		self.dispatch_messages(&client, step.messages);
+	fn process_seal_step(
+		&self,
+		client: Arc<dyn EngineClient>,
+		step: sealing::Step,
+		block_num: BlockNumber,
+	) {
+		let messages = step
+			.messages
+			.into_iter()
+			.map(|msg| msg.map(|m| Message::Sealing(block_num, m)));
+		self.dispatch_messages(&client, messages);
+		if let Some(sig) = step.output.into_iter().next() {
+			trace!(target: "engine", "Signature for block {} is ready", block_num);
+			let state = Sealing::Complete(sig);
+			self.sealing.write().insert(block_num, state);
+			client.update_sealing();
+		}
+	}
+
+	fn process_step(&self, client: Arc<dyn EngineClient>, step: Step<Contribution, NodeId>) {
+		let messages = step
+			.messages
+			.into_iter()
+			.map(|msg| msg.map(Message::HoneyBadger));
+		self.dispatch_messages(&client, messages);
 		self.process_output(client, step.output);
 	}
 
-	fn send_contribution(&self, client: Arc<EngineClient>, honey_badger: &mut HoneyBadger) {
+	fn send_contribution(&self, client: Arc<dyn EngineClient>, honey_badger: &mut HoneyBadger) {
 		// TODO: Select a random *subset* of transactions to propose
 		let input_contribution = Contribution::new(
 			&client
@@ -370,7 +447,11 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn skip_to_current_epoch(&self, client: &Arc<EngineClient>, honey_badger: &mut HoneyBadger) {
+	fn skip_to_current_epoch(
+		&self,
+		client: &Arc<dyn EngineClient>,
+		honey_badger: &mut HoneyBadger,
+	) {
 		if let Some(parent_block_number) = client.block_number(BlockId::Latest) {
 			honey_badger.skip_to_epoch(parent_block_number + 1);
 		} else {
@@ -378,7 +459,7 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn start_hbbft_epoch(&self, client: Arc<EngineClient>) {
+	fn start_hbbft_epoch(&self, client: Arc<dyn EngineClient>) {
 		// We silently return if the Honey Badger algorithm is not set, as it is expected in non-validator nodes.
 		if let Some(ref mut honey_badger) = *self.honey_badger.write() {
 			self.skip_to_current_epoch(&client, honey_badger);
@@ -388,7 +469,10 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn transaction_queue_and_time_thresholds_reached(&self, client: &Arc<EngineClient>) -> bool {
+	fn transaction_queue_and_time_thresholds_reached(
+		&self,
+		client: &Arc<dyn EngineClient>,
+	) -> bool {
 		if let Some(block_header) = client.block_header(BlockId::Latest) {
 			let target_min_timestamp = block_header.timestamp() + self.options.minimum_block_time;
 			let now = unix_now_secs();
@@ -397,6 +481,16 @@ impl HoneyBadgerBFT {
 		} else {
 			false
 		}
+	}
+
+	fn new_sealing(&self) -> Sealing {
+		let ni_lock = self.network_info.read();
+		let netinfo = ni_lock.as_ref().cloned().expect("NetworkInfo not found");
+		Sealing::new(netinfo)
+	}
+
+	fn client_arc(&self) -> Option<Arc<dyn EngineClient>> {
+		self.client.read().as_ref().and_then(Weak::upgrade)
 	}
 }
 
@@ -409,15 +503,37 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		&self.machine
 	}
 
-	fn verify_local_seal(&self, _header: &Header) -> Result<(), Error> {
-		Ok(())
+	fn verify_local_seal(&self, header: &Header) -> Result<(), Error> {
+		if header.seal().len() != 1 {
+			return Err(BlockError::InvalidSeal.into());
+		}
+		let seal: Vec<u8> = rlp::decode(header.seal().first().ok_or(BlockError::InvalidSeal)?)?;
+		let mut seal_bytes = [0u8; 96];
+		seal_bytes.copy_from_slice(&seal);
+		let sig = Signature::from_bytes(seal_bytes).map_err(|_| BlockError::InvalidSeal)?;
+		let pub_key = self
+			.network_info
+			.read()
+			.as_ref()
+			.expect("NetworkInfo not found")
+			.public_key_set()
+			.public_key();
+		if pub_key.verify(&sig, header.bare_hash()) {
+			Ok(())
+		} else {
+			Err(BlockError::InvalidSeal.into())
+		}
+	}
+
+	fn verify_block_basic(&self, header: &Header) -> Result<(), Error> {
+		self.verify_local_seal(header)
 	}
 
 	fn fork_choice(&self, new: &ExtendedHeader, current: &ExtendedHeader) -> ForkChoice {
 		total_difficulty_fork_choice(new, current)
 	}
 
-	fn register_client(&self, client: Weak<EngineClient>) {
+	fn register_client(&self, client: Weak<dyn EngineClient>) {
 		*self.client.write() = Some(client.clone());
 		if let Some(honey_badger) = self.new_honey_badger() {
 			*self.honey_badger.write() = Some(honey_badger);
@@ -426,7 +542,7 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		}
 	}
 
-	fn set_signer(&self, signer: Box<EngineSigner>) {
+	fn set_signer(&self, signer: Box<dyn EngineSigner>) {
 		*self.signer.write() = Some(signer);
 	}
 
@@ -435,15 +551,31 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 	}
 
 	fn sealing_state(&self) -> SealingState {
-		SealingState::Ready
+		// Purge obsolete sealing processes.
+		let client = match self.client_arc() {
+			None => return SealingState::NotReady,
+			Some(client) => client,
+		};
+		let next_block = match client.block_number(BlockId::Latest) {
+			None => return SealingState::NotReady,
+			Some(block_num) => block_num + 1,
+		};
+		let mut sealing = self.sealing.write();
+		*sealing = sealing.split_off(&next_block);
+
+		// We are ready to seal if we have a valid signature for the next block.
+		if let Some(next_seal) = sealing.get(&next_block) {
+			if next_seal.signature().is_some() {
+				return SealingState::Ready;
+			}
+		}
+		SealingState::NotReady
 	}
 
 	fn on_transactions_imported(&self) {
-		if let Some(ref weak) = *self.client.read() {
-			if let Some(client) = weak.upgrade() {
-				if self.transaction_queue_and_time_thresholds_reached(&client) {
-					self.start_hbbft_epoch(client);
-				}
+		if let Some(client) = self.client_arc() {
+			if self.transaction_queue_and_time_thresholds_reached(&client) {
+				self.start_hbbft_epoch(client);
 			}
 		}
 	}
@@ -451,8 +583,11 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 	fn handle_message(&self, message: &[u8], node_id: Option<H512>) -> Result<(), EngineError> {
 		match node_id {
 			Some(node_id) => match serde_json::from_slice(message) {
-				Ok(decoded_message) => self.process_message(decoded_message, node_id),
-				_ => Err(EngineError::MalformedMessage(
+				Ok(Message::HoneyBadger(hb_msg)) => self.process_hb_message(hb_msg, node_id),
+				Ok(Message::Sealing(block_num, seal_msg)) => {
+					self.process_sealing_message(seal_msg, node_id, block_num)
+				}
+				Err(_) => Err(EngineError::MalformedMessage(
 					"Serde decoding failed.".into(),
 				)),
 			},
@@ -465,9 +600,37 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		Ok(Vec::new())
 	}
 
-	fn generate_seal(&self, _block: &ExecutedBlock, _parent: &Header) -> Seal {
-		// For refactoring/debugging of block creation we seal instantly.
-		Seal::Regular(Vec::new())
+	fn seal_fields(&self, _header: &Header) -> usize {
+		1
+	}
+
+	fn generate_seal(&self, block: &ExecutedBlock, _parent: &Header) -> Seal {
+		let block_num = block.header.number();
+		let sig_bytes: Vec<u8> = match self
+			.sealing
+			.read()
+			.get(&block_num)
+			.and_then(Sealing::signature)
+		{
+			None => return Seal::None,
+			Some(sig) => {
+				if !self
+					.network_info
+					.read()
+					.as_ref()
+					.expect("NetworkInfo not found")
+					.public_key_set()
+					.public_key()
+					.verify(sig, block.header.bare_hash())
+				{
+					error!(target: "engine", "Threshold signature does not match new block.");
+					return Seal::None;
+				}
+				sig.to_bytes().into_iter().cloned().collect()
+			}
+		};
+		trace!(target: "engine", "Returning seal for block {}.", block_num);
+		Seal::Regular(vec![rlp::encode(&sig_bytes)])
 	}
 
 	fn should_miner_prepare_blocks(&self) -> bool {
