@@ -618,11 +618,7 @@ impl Miner {
 		let mut sealing = self.sealing.lock();
 		let chain_info = chain.chain_info();
 		let parent_block_number = block_number - 1;
-		let parent_header = if let Some(block_header) = chain.block_header(BlockId::Number(parent_block_number)) {
-			block_header
-		} else {
-			return None;
-		};
+		let parent_header = chain.block_header(BlockId::Number(parent_block_number))?;
 		let parent_hash = parent_header.hash();
 
 		match sealing.queue.get_pending_if(|b| b.block().header().parent_hash() == &parent_hash) {

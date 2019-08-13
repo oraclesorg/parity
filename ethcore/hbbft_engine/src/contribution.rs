@@ -24,7 +24,7 @@ pub fn unix_now_secs() -> u64 {
 	UNIX_EPOCH.elapsed().expect("Time not available").as_secs()
 }
 
-/// Returns the current UNIX Epoch time, in seconds.
+/// Returns the current UNIX Epoch time, in milliseconds.
 pub fn unix_now_millis() -> u128 {
 	UNIX_EPOCH
 		.elapsed()
