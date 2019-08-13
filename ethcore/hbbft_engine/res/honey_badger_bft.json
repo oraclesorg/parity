@@ -4,8 +4,9 @@
 		"external": {
 			"name": "HoneyBadgerBFT",
 			"params": {
-				"minimumBlockTime": 2,
+				"minimumBlockTime": 0,
 				"transactionQueueSizeTrigger": 1,
+				"isUnitTest": true
 			}
 		}
 	},

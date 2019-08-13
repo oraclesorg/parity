@@ -20,8 +20,16 @@ pub(super) struct Contribution {
 const RANDOM_BYTES_PER_EPOCH: usize = 4 * 20;
 
 /// Returns the current UNIX Epoch time, in seconds.
-fn unix_now_secs() -> u64 {
+pub fn unix_now_secs() -> u64 {
 	UNIX_EPOCH.elapsed().expect("Time not available").as_secs()
+}
+
+/// Returns the current UNIX Epoch time, in seconds.
+pub fn unix_now_millis() -> u128 {
+	UNIX_EPOCH
+		.elapsed()
+		.expect("Time not available")
+		.as_millis()
 }
 
 impl Contribution {
