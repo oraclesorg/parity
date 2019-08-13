@@ -1441,16 +1441,9 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			.best_block_header()
 			.number()
 			.saturating_sub(SIBLING_MALICE_DETECTION_PERIOD);
-		let keys_to_remove: Vec<_> = self
-			.received_block_hashes
-			.read()
-			.keys()
-			.take_while(|(n, _)| *n < oldest_block_number)
-			.cloned()
-			.collect();
-		for k in keys_to_remove {
-			self.received_block_hashes.write().remove(&k);
-		}
+		let mut rbh = self.received_block_hashes.write();
+		let new_rbh = rbh.split_off(&(oldest_block_number, Address::zero()));
+		*rbh = new_rbh;
 
 		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
 		if self.posdao_transition.map_or(true, |block_num| block.header.number() < block_num) {
@@ -1549,7 +1542,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			Err(EngineError::DoubleVote(*header.author()))?;
 		}
 		// Report malice if the validator produced other sibling blocks in the same step.
-		let received_block_key = (header.number(), header.author().clone());
+		let received_block_key = (header.number(), *header.author());
 		let new_hash = header.hash();
 		if self.received_block_hashes.read().get(&received_block_key).into_iter().any(|h| *h != new_hash) {
 			trace!(target: "engine", "Validator {} produced sibling blocks", header.author());
