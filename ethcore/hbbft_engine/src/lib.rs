@@ -28,13 +28,17 @@ extern crate toml;
 
 mod contribution;
 mod hbbft_engine;
+mod sealing;
 
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers;
 
 use ethcore::engines::registry::EnginePlugin;
+use ethkey::Public;
 
 pub use hbbft_engine::HoneyBadgerBFT;
+
+type NodeId = Public;
 
 /// Registers the `HoneyBadgerBFT` engine. This must be called before parsing the chain spec.
 pub fn init() {
