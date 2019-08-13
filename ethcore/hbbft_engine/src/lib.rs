@@ -1,5 +1,6 @@
 extern crate common_types as types;
 extern crate ethcore;
+extern crate ethcore_io as io;
 extern crate ethcore_miner;
 extern crate ethereum_types;
 extern crate ethkey;

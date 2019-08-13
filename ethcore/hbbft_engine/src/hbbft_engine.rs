@@ -1,4 +1,4 @@
-use crate::contribution::Contribution;
+use crate::contribution::{unix_now_millis, unix_now_secs, Contribution};
 use ethcore::block::ExecutedBlock;
 use ethcore::client::{BlockId, EngineClient};
 use ethcore::engines::signer::EngineSigner;
@@ -13,13 +13,16 @@ use ethkey::Public;
 use hbbft::crypto::{serde_impl::SerdeSecret, PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
 use hbbft::honey_badger::{HoneyBadgerBuilder, Step};
 use hbbft::{NetworkInfo, Target};
+use io::{IoContext, IoHandler, IoService, TimerToken};
 use itertools::Itertools;
 use parking_lot::RwLock;
 use rlp::{Decodable, Rlp};
 use serde::Deserialize;
 use serde_json;
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 use types::header::{ExtendedHeader, Header};
 use types::transaction::SignedTransaction;
 
@@ -33,17 +36,111 @@ type TargetedMessage = hbbft::TargetedMessage<Message, NodeId>;
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 struct HoneyBadgerOptions {
+	/// The minimum time duration between blocks, in seconds.
 	pub minimum_block_time: u64,
+	/// The length of the transaction queue at which block creation should be triggered.
 	pub transaction_queue_size_trigger: usize,
+	/// Should be true when running unit tests to avoid starting timers.
+	pub is_unit_test: Option<bool>,
 }
 
 pub struct HoneyBadgerBFT {
+	transition_service: IoService<()>,
 	client: Arc<RwLock<Option<Weak<EngineClient>>>>,
 	signer: RwLock<Option<Box<EngineSigner>>>,
 	machine: EthereumMachine,
 	network_info: RwLock<Option<NetworkInfo<NodeId>>>,
 	honey_badger: RwLock<Option<HoneyBadger>>,
 	options: HoneyBadgerOptions,
+}
+
+struct TransitionHandler {
+	client: Arc<RwLock<Option<Weak<dyn EngineClient>>>>,
+	engine: Arc<HoneyBadgerBFT>,
+}
+
+impl TransitionHandler {
+	/// Returns the approximate time duration between the latest block and the minimum block time
+	/// or a keep-alive time duration of 1s.
+	fn duration_remaining_since_last_block(&self, client: Arc<EngineClient>) -> Duration {
+		if let Some(block_header) = client.block_header(BlockId::Latest) {
+			let now = unix_now_millis();
+			// The minimum_block time is specified in seconds.
+			let minimum_block_time = self.engine.options.minimum_block_time * 1000;
+
+			// The timestamp of the parent block is stored in seconds,
+			// the actual time it was created could be anywhere between the given second and
+			// a millisecond before the next full second.
+			let parent_timestamp = block_header.timestamp() as u128 * 1000;
+
+			// In theory (and practice) the time distance between now and the timestamp could be negative,
+			// just return the minimum block time plus 1s in this case.
+			if parent_timestamp > now {
+				error!(target: "engine", "Last block timestamp larger than current time.");
+				return Duration::from_millis(minimum_block_time + 1000);
+			}
+
+			// The distance between now and the parent timestamp is guaranteed to be non-negative at this point.
+			let duration_since_last_block: u64 = match u64::try_from(now - parent_timestamp) {
+				Ok(value) => value,
+				_ => {
+					error!(target: "engine", "Could not convert duration from last block to u64");
+					return Duration::from_millis(1000);
+				}
+			};
+			if duration_since_last_block <= minimum_block_time {
+				// Time since last block within the minimum block time.
+				// We do still wait the full minimum block time to compensate for the fact
+				// that the block time stamp is only at 1s granularity.
+				Duration::from_millis(minimum_block_time)
+			} else {
+				// Time since last block outside the minimum block time,
+				// trigger timer every second to keep the event loop running.
+				Duration::from_millis(1000)
+			}
+		} else {
+			error!(target: "engine", "Latest Block Header could not be obtained!");
+			Duration::from_millis(1000)
+		}
+	}
+}
+
+const ENGINE_TIMEOUT_TOKEN: TimerToken = 23;
+
+impl IoHandler<()> for TransitionHandler {
+	fn initialize(&self, io: &IoContext<()>) {
+		// Start the event loop with an arbitrary timer
+		io.register_timer_once(ENGINE_TIMEOUT_TOKEN, Duration::from_millis(1000))
+			.unwrap_or_else(|e| warn!(target: "engine", "Failed to start consensus timer: {}.", e))
+	}
+
+	fn timeout(&self, io: &IoContext<()>, timer: TimerToken) {
+		if timer == ENGINE_TIMEOUT_TOKEN {
+			// The block may be complete, but not have been ready to seal - trigger a new seal attempt.
+			if let Some(ref weak) = *self.client.read() {
+				if let Some(c) = weak.upgrade() {
+					c.update_sealing();
+				}
+			}
+
+			// Transactions may have been submitted during creation of the last block, trigger the
+			// creation of a new block if the transaction threshold has been reached.
+			self.engine.on_transactions_imported();
+
+			// The client may not be registered yet on startup, we set the default interval to 1s.
+			let mut timer_duration = Duration::from_millis(1000);
+			if let Some(ref weak) = *self.client.read() {
+				if let Some(c) = weak.upgrade() {
+					timer_duration = self.duration_remaining_since_last_block(c);
+				}
+			}
+
+			io.register_timer_once(ENGINE_TIMEOUT_TOKEN, timer_duration)
+				.unwrap_or_else(
+					|e| warn!(target: "engine", "Failed to restart consensus step timer: {}.", e),
+				);
+		}
+	}
 }
 
 impl HoneyBadgerBFT {
@@ -53,9 +150,10 @@ impl HoneyBadgerBFT {
 	) -> Result<Arc<EthEngine>, Box<Error>> {
 		let options = match HoneyBadgerOptions::deserialize(params) {
 			Ok(options) => options,
-			Err(e) => panic!("HoneyBadgerBFTParams: Invalid chain spec options\n{}", e)
+			Err(e) => panic!("HoneyBadgerBFTParams: Invalid chain spec options\n{}", e),
 		};
 		let engine = Arc::new(HoneyBadgerBFT {
+			transition_service: IoService::<()>::start().map_err(|err| Box::new(err.into()))?,
 			client: Arc::new(RwLock::new(None)),
 			signer: RwLock::new(None),
 			machine,
@@ -63,6 +161,18 @@ impl HoneyBadgerBFT {
 			honey_badger: RwLock::new(None),
 			options,
 		});
+
+		if engine.options.is_unit_test.is_none() {
+			let handler = TransitionHandler {
+				client: engine.client.clone(),
+				engine: engine.clone(),
+			};
+			engine
+				.transition_service
+				.register_handler(Arc::new(handler))
+				.map_err(|err| Box::new(err.into()))?;
+		}
+
 		Ok(engine)
 	}
 
@@ -286,6 +396,20 @@ impl HoneyBadgerBFT {
 			// error!(target: "engine", "Attempt to start an epoch without the honey badger algorithm being set.");
 		}
 	}
+
+	fn transaction_queue_and_time_thresholds_reached(&self, client: &Arc<EngineClient>) -> bool {
+		if let Some(block_header) = client.block_header(BlockId::Latest) {
+			let target_min_timestamp = block_header.timestamp() + self.options.minimum_block_time;
+			let now = unix_now_secs();
+			if target_min_timestamp <= now {
+				if client.queued_transactions().len() >= self.options.transaction_queue_size_trigger
+				{
+					return true;
+				}
+			}
+		}
+		false
+	}
 }
 
 impl Engine<EthereumMachine> for HoneyBadgerBFT {
@@ -329,7 +453,7 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 	fn on_transactions_imported(&self) {
 		if let Some(ref weak) = *self.client.read() {
 			if let Some(client) = weak.upgrade() {
-				if client.queued_transactions().len() >= self.options.transaction_queue_size_trigger {
+				if self.transaction_queue_and_time_thresholds_reached(&client) {
 					self.start_hbbft_epoch(client);
 				}
 			}
