@@ -59,58 +59,51 @@ struct TransitionHandler {
 	engine: Arc<HoneyBadgerBFT>,
 }
 
+const DEFAULT_DURATION: Duration = Duration::from_secs(1);
+
 impl TransitionHandler {
 	/// Returns the approximate time duration between the latest block and the minimum block time
 	/// or a keep-alive time duration of 1s.
 	fn duration_remaining_since_last_block(&self, client: Arc<EngineClient>) -> Duration {
 		if let Some(block_header) = client.block_header(BlockId::Latest) {
+			// The block timestamp and minimum block time are specified in seconds.
+			let next_block_time =
+				(block_header.timestamp() + self.engine.options.minimum_block_time) as u128 * 1000;
+
+			// We get the current time in milliseconds to calculate the exact timer duration.
 			let now = unix_now_millis();
-			// The minimum_block time is specified in seconds.
-			let minimum_block_time = self.engine.options.minimum_block_time * 1000;
 
-			// The timestamp of the parent block is stored in seconds,
-			// the actual time it was created could be anywhere between the given second and
-			// a millisecond before the next full second.
-			let parent_timestamp = block_header.timestamp() as u128 * 1000;
-
-			// In theory (and practice) the time distance between now and the timestamp could be negative,
-			// just return the minimum block time plus 1s in this case.
-			if parent_timestamp > now {
-				error!(target: "engine", "Last block timestamp larger than current time.");
-				return Duration::from_millis(minimum_block_time + 1000);
-			}
-
-			// The distance between now and the parent timestamp is guaranteed to be non-negative at this point.
-			let duration_since_last_block: u64 = match u64::try_from(now - parent_timestamp) {
-				Ok(value) => value,
-				_ => {
-					error!(target: "engine", "Could not convert duration from last block to u64");
-					return Duration::from_millis(1000);
-				}
-			};
-			if duration_since_last_block <= minimum_block_time {
-				// Time since last block within the minimum block time.
-				// We do still wait the full minimum block time to compensate for the fact
-				// that the block time stamp is only at 1s granularity.
-				Duration::from_millis(minimum_block_time)
+			if now >= next_block_time {
+				// If the current time is already past the minimum time for the next block,
+				// just return the 1s keep alive interval.
+				DEFAULT_DURATION
 			} else {
-				// Time since last block outside the minimum block time,
-				// trigger timer every second to keep the event loop running.
-				Duration::from_millis(1000)
+				// Otherwise wait the exact number of milliseconds needed for the
+				// now >= next_block_time condition to be true.
+				// Since we know that "now" is smaller than "next_block_time" at this point
+				// we also know that "next_block_time - now" will always be a positive number.
+				match u64::try_from(next_block_time - now) {
+					Ok(value) => Duration::from_millis(value),
+					_ => {
+						error!(target: "engine", "Could not convert duration to next block to u64");
+						DEFAULT_DURATION
+					}
+				}
 			}
 		} else {
 			error!(target: "engine", "Latest Block Header could not be obtained!");
-			Duration::from_millis(1000)
+			DEFAULT_DURATION
 		}
 	}
 }
 
-const ENGINE_TIMEOUT_TOKEN: TimerToken = 23;
+// Arbitrary identifier for the timer we register with the event handler.
+const ENGINE_TIMEOUT_TOKEN: TimerToken = 1;
 
 impl IoHandler<()> for TransitionHandler {
 	fn initialize(&self, io: &IoContext<()>) {
 		// Start the event loop with an arbitrary timer
-		io.register_timer_once(ENGINE_TIMEOUT_TOKEN, Duration::from_millis(1000))
+		io.register_timer_once(ENGINE_TIMEOUT_TOKEN, DEFAULT_DURATION)
 			.unwrap_or_else(|e| warn!(target: "engine", "Failed to start consensus timer: {}.", e))
 	}
 
@@ -127,8 +120,8 @@ impl IoHandler<()> for TransitionHandler {
 			// creation of a new block if the transaction threshold has been reached.
 			self.engine.on_transactions_imported();
 
-			// The client may not be registered yet on startup, we set the default interval to 1s.
-			let mut timer_duration = Duration::from_millis(1000);
+			// The client may not be registered yet on startup, we set the default duration.
+			let mut timer_duration = DEFAULT_DURATION;
 			if let Some(ref weak) = *self.client.read() {
 				if let Some(c) = weak.upgrade() {
 					timer_duration = self.duration_remaining_since_last_block(c);
@@ -162,7 +155,7 @@ impl HoneyBadgerBFT {
 			options,
 		});
 
-		if engine.options.is_unit_test.is_none() {
+		if !engine.options.is_unit_test.unwrap_or(false) {
 			let handler = TransitionHandler {
 				client: engine.client.clone(),
 				engine: engine.clone(),
@@ -386,14 +379,12 @@ impl HoneyBadgerBFT {
 	}
 
 	fn start_hbbft_epoch(&self, client: Arc<EngineClient>) {
+		// We silently return if the Honey Badger algorithm is not set, as it is expected in non-validator nodes.
 		if let Some(ref mut honey_badger) = *self.honey_badger.write() {
 			self.skip_to_current_epoch(&client, honey_badger);
 			if !honey_badger.has_input() {
 				self.send_contribution(client, honey_badger);
 			}
-		} else {
-			// The Honey Badger algorithm is expected not to be available on non-validator nodes.
-			// error!(target: "engine", "Attempt to start an epoch without the honey badger algorithm being set.");
 		}
 	}
 
@@ -401,14 +392,11 @@ impl HoneyBadgerBFT {
 		if let Some(block_header) = client.block_header(BlockId::Latest) {
 			let target_min_timestamp = block_header.timestamp() + self.options.minimum_block_time;
 			let now = unix_now_secs();
-			if target_min_timestamp <= now {
-				if client.queued_transactions().len() >= self.options.transaction_queue_size_trigger
-				{
-					return true;
-				}
-			}
+			target_min_timestamp <= now
+				&& client.queued_transactions().len() >= self.options.transaction_queue_size_trigger
+		} else {
+			false
 		}
-		false
 	}
 }
 
