@@ -38,6 +38,7 @@ use engines::{
 	EthEngine, NullEngine, InstantSeal, InstantSealParams, BasicAuthority, Clique,
 	AuthorityRound, DEFAULT_BLOCKHASH_CONTRACT
 };
+use engines::registry::EnginePlugin;
 use error::Error;
 use executive::Executive;
 use factory::Factories;
@@ -617,6 +618,15 @@ impl Spec {
 								.expect("Failed to start Clique consensus engine."),
 			ethjson::spec::Engine::AuthorityRound(authority_round) => AuthorityRound::new(authority_round.params.into(), machine)
 				.expect("Failed to start AuthorityRound consensus engine."),
+			ethjson::spec::Engine::External { name, params } => {
+				for &EnginePlugin(e_name, constructor) in inventory::iter {
+					if name == e_name {
+						return constructor(&params, machine).expect("Failed to start external consensus engine.");
+					}
+				}
+				panic!("Engine type {:?} not found. External engines need to be registered before parsing the spec.",
+					   name);
+			}
 		}
 	}
 
