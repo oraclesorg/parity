@@ -53,7 +53,7 @@ use types::transaction::{self, UnverifiedTransaction, SignedTransaction};
 
 use ethkey::{Signature};
 use machine::{self, Machine, AuxiliaryRequest, AuxiliaryData};
-use ethereum_types::{H64, H256, U256, Address};
+use ethereum_types::{H64, H256, H512, U256, Address};
 use unexpected::{Mismatch, OutOfBounds};
 use bytes::Bytes;
 use types::ancestry_action::AncestryAction;
@@ -445,7 +445,7 @@ pub trait Engine<M: Machine>: Sync + Send {
 
 	/// Handle any potential consensus messages;
 	/// updating consensus state and potentially issuing a new one.
-	fn handle_message(&self, _message: &[u8], _peer_id: usize) -> Result<(), EngineError> { Err(EngineError::UnexpectedMessage) }
+	fn handle_message(&self, _message: &[u8], _peer_id: usize, node: Option<H512>) -> Result<(), EngineError> { Err(EngineError::UnexpectedMessage) }
 
 	/// Register a component which signs consensus messages.
 	fn set_signer(&self, _signer: Box<EngineSigner>) {}

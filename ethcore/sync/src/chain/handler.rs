@@ -21,7 +21,7 @@ use enum_primitive::FromPrimitive;
 use ethcore::error::{Error as EthcoreError, ErrorKind as EthcoreErrorKind, ImportErrorKind, BlockError};
 use ethcore::snapshot::{ManifestData, RestorationStatus};
 use ethcore::verification::queue::kind::blocks::Unverified;
-use ethereum_types::{H256, U256};
+use ethereum_types::{H256, H512, U256};
 use hash::keccak;
 use network::PeerId;
 use network::client_version::ClientVersion;
@@ -110,9 +110,9 @@ impl SyncHandler {
 	}
 
 	/// Called when peer sends us new consensus packet
-	pub fn on_consensus_packet(io: &mut SyncIo, peer_id: PeerId, r: &Rlp) {
+	pub fn on_consensus_packet(io: &mut SyncIo, peer_id: PeerId, r: &Rlp, node_id: Option<H512>) {
 		trace!(target: "sync", "Received consensus packet from {:?}", peer_id);
-		io.chain().queue_consensus_message(r.as_raw().to_vec(), peer_id);
+		io.chain().queue_consensus_message(r.as_raw().to_vec(), peer_id, node_id);
 	}
 
 	/// Called by peer when it is disconnecting

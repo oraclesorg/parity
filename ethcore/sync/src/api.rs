@@ -454,7 +454,8 @@ impl NetworkProtocolHandler for SyncProtocolHandler {
 	}
 
 	fn read(&self, io: &NetworkContext, peer: &PeerId, packet_id: u8, data: &[u8]) {
-		self.sync.dispatch_packet(&mut NetSyncIo::new(io, &*self.chain, &*self.snapshot_service, &self.overlay), *peer, packet_id, data);
+		let node_id = io.session_info(*peer).unwrap().id;
+		self.sync.dispatch_packet(&mut NetSyncIo::new(io, &*self.chain, &*self.snapshot_service, &self.overlay), *peer, packet_id, data, node_id);
 	}
 
 	fn connected(&self, io: &NetworkContext, peer: &PeerId) {
