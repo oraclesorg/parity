@@ -276,7 +276,7 @@ impl Miner {
 		let nonce_cache_size = cmp::max(4096, limits.max_count / 4);
 		let refuse_service_transactions = options.refuse_service_transactions;
 
-		Miner {
+		let miner = Miner {
 			sealing: Mutex::new(SealingWork {
 				queue: UsingQueue::new(options.work_queue_size),
 				enabled: options.force_sealing
@@ -300,7 +300,16 @@ impl Miner {
 			} else {
 				Some(ServiceTransactionChecker::default())
 			},
-		}
+		};
+
+		// Notify engine about transaction queue changes
+		let engine = spec.engine.clone();
+		let transaction_queue = miner.transaction_queue.clone();
+		miner.add_transactions_listener(Box::new(move |_hashes| {
+			engine.on_transactions_imported(&transaction_queue);
+		}));
+
+		miner
 	}
 
 	/// Creates new instance of miner with given spec and accounts.
