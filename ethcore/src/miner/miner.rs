@@ -276,7 +276,7 @@ impl Miner {
 		let nonce_cache_size = cmp::max(4096, limits.max_count / 4);
 		let refuse_service_transactions = options.refuse_service_transactions;
 
-		let miner = Miner {
+		Miner {
 			sealing: Mutex::new(SealingWork {
 				queue: UsingQueue::new(options.work_queue_size),
 				enabled: options.force_sealing
@@ -300,15 +300,7 @@ impl Miner {
 			} else {
 				Some(ServiceTransactionChecker::default())
 			},
-		};
-
-		// Notify engine about transaction queue changes
-		let engine = spec.engine.clone();
-		miner.add_transactions_listener(Box::new(move |_hashes| {
-			engine.on_transactions_imported();
-		}));
-
-		miner
+		}
 	}
 
 	/// Creates new instance of miner with given spec and accounts.
@@ -967,8 +959,11 @@ impl miner::MinerService for Miner {
 		// | NOTE Code below requires sealing locks.                                |
 		// | Make sure to release the locks before calling that method.             |
 		// --------------------------------------------------------------------------
-		if !results.is_empty() && self.options.reseal_on_external_tx &&	self.sealing.lock().reseal_allowed() {
-			self.prepare_and_update_sealing(chain);
+		if !results.is_empty() {
+			self.engine.on_transactions_imported();
+			if self.options.reseal_on_external_tx && self.sealing.lock().reseal_allowed() {
+				self.prepare_and_update_sealing(chain);
+			}
 		}
 
 		results
@@ -993,8 +988,11 @@ impl miner::MinerService for Miner {
 		// | NOTE Code below requires sealing locks.                                |
 		// | Make sure to release the locks before calling that method.             |
 		// --------------------------------------------------------------------------
-		if imported.is_ok() && self.options.reseal_on_own_tx && self.sealing.lock().reseal_allowed() {
-			self.prepare_and_update_sealing(chain);
+		if imported.is_ok() {
+			self.engine.on_transactions_imported();
+			if self.options.reseal_on_own_tx && self.sealing.lock().reseal_allowed() {
+				self.prepare_and_update_sealing(chain);
+			}
 		}
 
 		imported
