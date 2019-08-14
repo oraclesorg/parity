@@ -47,7 +47,7 @@ use types::header::Header;
 use types::receipt::RichReceipt;
 use using_queue::{UsingQueue, GetAction};
 
-use block::{ClosedBlock, IsBlock, SealedBlock, OpenBlock};
+use block::{ClosedBlock, SealedBlock, OpenBlock};
 use client::{
 	BlockChain, ChainInfo, BlockProducer, SealedBlockImporter, Nonce, TransactionInfo, TransactionId
 };
@@ -415,7 +415,7 @@ impl Miner {
 		};
 
 		// Before adding from the queue to the new block, give the engine a chance to add transactions.
-		let engine_pending = match self.engine.on_prepare_block(open_block.block()) {
+		let engine_pending = match self.engine.on_prepare_block(&open_block) {
 			Ok(transactions) => transactions,
 			Err(err) => {
 				error!(target: "miner", "Failed to prepare engine transactions for new block: {:?}. \
@@ -447,7 +447,7 @@ impl Miner {
 			//   if at least one was pushed successfully, close and enqueue new ClosedBlock;
 			//   otherwise, leave everything alone.
 			// otherwise, author a fresh block.
-			let (mut block, engine_txns) = match sealing.queue.get_pending_if(|b| b.block().header().parent_hash() == &best_hash) {
+			let (mut block, engine_txns) = match sealing.queue.get_pending_if(|b| b.header.parent_hash() == &best_hash) {
 				Some(old_block) => {
 					trace!(target: "miner", "prepare_block: Already have previous work; updating and returning");
 
@@ -519,7 +519,7 @@ impl Miner {
 		let mut invalid_transactions = HashSet::new();
 		let mut not_allowed_transactions = HashSet::new();
 		let mut senders_to_penalize = HashSet::new();
-		let block_number = open_block.block().header().number();
+		let block_number = open_block.header.number();
 
 		let mut tx_count = 0usize;
 		let mut skipped_transactions = 0usize;
@@ -633,7 +633,7 @@ impl Miner {
 		let parent_header = chain.block_header(BlockId::Number(parent_block_number))?;
 		let parent_hash = parent_header.hash();
 
-		match sealing.queue.get_pending_if(|b| b.block().header().parent_hash() == &parent_hash) {
+		match sealing.queue.get_pending_if(|b| b.header.parent_hash() == &parent_hash) {
 			Some(_) => {
 				trace!(target: "miner", "create_pending_block: Already have a pending block!");
 				None
@@ -643,7 +643,7 @@ impl Miner {
 
 				let (mut open_block, engine_pending) = self.create_open_block(chain)?;
 				// Only proceed with blocks at the desired block number.
-				if open_block.header().number() != block_number {
+				if open_block.header.number() != block_number {
 					return None
 				}
 
