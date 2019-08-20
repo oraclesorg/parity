@@ -2,6 +2,8 @@ use crate::NodeId;
 use hbbft::crypto::Signature;
 use hbbft::threshold_sign::ThresholdSign;
 use hbbft::NetworkInfo;
+use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
+use std::result;
 use std::sync::Arc;
 
 pub use hbbft::threshold_sign::{Message, Result};
@@ -46,5 +48,41 @@ impl Sealing {
 			Sealing::Ongoing(_) => None,
 			Sealing::Complete(sig) => Some(sig),
 		}
+	}
+}
+
+/// Wrapper for `Signature` to simplify RLP encoding and decoding.
+#[derive(PartialEq, Debug)]
+pub struct RlpSig<T>(pub T);
+
+impl<'a> Encodable for RlpSig<&'a Signature> {
+	fn rlp_append(&self, s: &mut RlpStream) {
+		s.encoder().encode_value(&self.0.to_bytes());
+	}
+}
+
+const RLP_ERR: &str = "RLP bytes don't encode a valid signature";
+
+impl Decodable for RlpSig<Signature> {
+	fn decode(rlp: &Rlp) -> result::Result<Self, DecoderError> {
+		let mut seal_bytes = [0u8; 96];
+		seal_bytes.copy_from_slice(rlp.data()?);
+		let sig = Signature::from_bytes(seal_bytes).map_err(|_| DecoderError::Custom(RLP_ERR))?;
+		Ok(RlpSig(sig))
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use rand;
+	use rlp;
+
+	#[test]
+	fn test_rlp_signature() {
+		let sig: Signature = rand::random();
+		let encoded = rlp::encode(&RlpSig(&sig));
+		let decoded: RlpSig<Signature> = rlp::decode(&encoded).expect("decode RlpSignature");
+		assert_eq!(decoded.0, sig);
 	}
 }
