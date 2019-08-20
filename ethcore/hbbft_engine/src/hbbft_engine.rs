@@ -62,6 +62,7 @@ pub struct HoneyBadgerBFT {
 	machine: EthereumMachine,
 	network_info: RwLock<Option<NetworkInfo<NodeId>>>,
 	honey_badger: RwLock<Option<HoneyBadger>>,
+	public_master_key: RwLock<Option<PublicKey>>,
 	sealing: RwLock<BTreeMap<BlockNumber, Sealing>>,
 	options: HoneyBadgerOptions,
 }
@@ -165,6 +166,7 @@ impl HoneyBadgerBFT {
 			machine,
 			network_info: RwLock::new(None),
 			honey_badger: RwLock::new(None),
+			public_master_key: RwLock::new(None),
 			sealing: RwLock::new(BTreeMap::new()),
 			options,
 		});
@@ -202,21 +204,17 @@ impl HoneyBadgerBFT {
 		))
 	}
 
-	fn new_honey_badger(&self) -> Option<HoneyBadger> {
-		if let Some(client) = self.client_arc() {
-			// TODO: Retrieve the information to build a node-specific NetworkInfo
-			//       struct from the chain spec and from contracts.
-			let options = client.hbbft_options().expect("hbbft options have to exist");
-			if let Some(net_info) = HoneyBadgerBFT::new_network_info(options) {
-				let mut builder: HoneyBadgerBuilder<Contribution, _> =
-					HoneyBadger::builder(Arc::new(net_info.clone()));
-				*self.network_info.write() = Some(net_info);
-				return Some(builder.build());
-			} else {
-				return None;
-			}
+	fn new_honey_badger(&self, options: HbbftOptions) -> Option<HoneyBadger> {
+		// TODO: Retrieve the information to build a node-specific NetworkInfo
+		//       struct from the chain spec and from contracts.
+		if let Some(net_info) = HoneyBadgerBFT::new_network_info(options) {
+			let mut builder: HoneyBadgerBuilder<Contribution, _> =
+				HoneyBadger::builder(Arc::new(net_info.clone()));
+			*self.network_info.write() = Some(net_info);
+			return Some(builder.build());
+		} else {
+			return None;
 		}
-		None
 	}
 
 	fn process_output(&self, client: Arc<dyn EngineClient>, output: Vec<Batch>) {
@@ -511,20 +509,13 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		if header.seal().len() != 1 {
 			return Err(BlockError::InvalidSeal.into());
 		}
-		let netinfo_opt = self.network_info.read();
-		let pub_key = match netinfo_opt.as_ref() {
-			None => {
-				// TODO: Don't require secret key shares for observers, but allow
-				// them to validate.
-				warn!(target: "engine",
-					"NetworkInfo not found. Not validating seal for block #{} ({}).",
-					header.number(), header.hash());
-				return Ok(());
-			}
-			Some(netinfo) => netinfo.public_key_set().public_key(),
-		};
 		let RlpSig(sig) = rlp::decode(header.seal().first().ok_or(BlockError::InvalidSeal)?)?;
-		if pub_key.verify(&sig, header.bare_hash()) {
+		if self
+			.public_master_key
+			.read()
+			.expect("Missing public master key")
+			.verify(&sig, header.bare_hash())
+		{
 			Ok(())
 		} else {
 			Err(BlockError::InvalidSeal.into())
@@ -537,10 +528,24 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 
 	fn register_client(&self, client: Weak<dyn EngineClient>) {
 		*self.client.write() = Some(client.clone());
-		if let Some(honey_badger) = self.new_honey_badger() {
-			*self.honey_badger.write() = Some(honey_badger);
-		} else {
-			info!(target: "engine", "HoneyBadger algorithm could not be created - running as regular node");
+		if let Some(client) = self.client_arc() {
+			// TODO: Retrieve the information to build a node-specific NetworkInfo
+			//       struct from the chain spec and from contracts.
+			let options = client.hbbft_options().expect("hbbft options have to exist");
+			let pks: PublicKeySet = match serde_json::from_str(&options.hbbft_public_key_set) {
+				Ok(pks) => pks,
+				Err(err) => {
+					error!(target: "engine", "Failed to read public master key from options: {:?}",
+					       err);
+					return;
+				}
+			};
+			*self.public_master_key.write() = Some(pks.public_key());
+			if let Some(honey_badger) = self.new_honey_badger(options) {
+				*self.honey_badger.write() = Some(honey_badger);
+			} else {
+				info!(target: "engine", "HoneyBadger algorithm could not be created - running as regular node");
+			}
 		}
 	}
 
@@ -614,12 +619,9 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 			Some(sig) => sig,
 		};
 		if !self
-			.network_info
+			.public_master_key
 			.read()
-			.as_ref()
-			.expect("NetworkInfo not found")
-			.public_key_set()
-			.public_key()
+			.expect("Missing public master key")
 			.verify(sig, block.header.bare_hash())
 		{
 			error!(target: "engine", "Threshold signature does not match new block.");
