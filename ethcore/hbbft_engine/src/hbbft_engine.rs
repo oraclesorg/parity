@@ -1,5 +1,5 @@
 use crate::contribution::{unix_now_millis, unix_now_secs, Contribution};
-use crate::sealing::{self, Sealing};
+use crate::sealing::{self, RlpSig, Sealing};
 use crate::NodeId;
 use ethcore::block::ExecutedBlock;
 use ethcore::client::{BlockId, EngineClient};
@@ -12,7 +12,7 @@ use ethcore::machine::EthereumMachine;
 use ethcore::miner::HbbftOptions;
 use ethereum_types::H512;
 use hbbft::crypto::serde_impl::SerdeSecret;
-use hbbft::crypto::{PublicKey, PublicKeySet, SecretKey, SecretKeyShare, Signature};
+use hbbft::crypto::{PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
 use hbbft::honey_badger::{self, HoneyBadgerBuilder, Step};
 use hbbft::{NetworkInfo, Target};
 use io::{IoContext, IoHandler, IoService, TimerToken};
@@ -503,14 +503,15 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		&self.machine
 	}
 
-	fn verify_local_seal(&self, header: &Header) -> Result<(), Error> {
+	fn verify_local_seal(&self, _header: &Header) -> Result<(), Error> {
+		Ok(())
+	}
+
+	fn verify_block_basic(&self, header: &Header) -> Result<(), Error> {
 		if header.seal().len() != 1 {
 			return Err(BlockError::InvalidSeal.into());
 		}
-		let seal: Vec<u8> = rlp::decode(header.seal().first().ok_or(BlockError::InvalidSeal)?)?;
-		let mut seal_bytes = [0u8; 96];
-		seal_bytes.copy_from_slice(&seal);
-		let sig = Signature::from_bytes(seal_bytes).map_err(|_| BlockError::InvalidSeal)?;
+		let RlpSig(sig) = rlp::decode(header.seal().first().ok_or(BlockError::InvalidSeal)?)?;
 		let pub_key = self
 			.network_info
 			.read()
@@ -523,10 +524,6 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		} else {
 			Err(BlockError::InvalidSeal.into())
 		}
-	}
-
-	fn verify_block_basic(&self, header: &Header) -> Result<(), Error> {
-		self.verify_local_seal(header)
 	}
 
 	fn fork_choice(&self, new: &ExtendedHeader, current: &ExtendedHeader) -> ForkChoice {
@@ -606,31 +603,25 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 
 	fn generate_seal(&self, block: &ExecutedBlock, _parent: &Header) -> Seal {
 		let block_num = block.header.number();
-		let sig_bytes: Vec<u8> = match self
-			.sealing
-			.read()
-			.get(&block_num)
-			.and_then(Sealing::signature)
-		{
+		let sealing = self.sealing.read();
+		let sig = match sealing.get(&block_num).and_then(Sealing::signature) {
 			None => return Seal::None,
-			Some(sig) => {
-				if !self
-					.network_info
-					.read()
-					.as_ref()
-					.expect("NetworkInfo not found")
-					.public_key_set()
-					.public_key()
-					.verify(sig, block.header.bare_hash())
-				{
-					error!(target: "engine", "Threshold signature does not match new block.");
-					return Seal::None;
-				}
-				sig.to_bytes().into_iter().cloned().collect()
-			}
+			Some(sig) => sig,
 		};
+		if !self
+			.network_info
+			.read()
+			.as_ref()
+			.expect("NetworkInfo not found")
+			.public_key_set()
+			.public_key()
+			.verify(sig, block.header.bare_hash())
+		{
+			error!(target: "engine", "Threshold signature does not match new block.");
+			return Seal::None;
+		}
 		trace!(target: "engine", "Returning seal for block {}.", block_num);
-		Seal::Regular(vec![rlp::encode(&sig_bytes)])
+		Seal::Regular(vec![rlp::encode(&RlpSig(sig))])
 	}
 
 	fn should_miner_prepare_blocks(&self) -> bool {
