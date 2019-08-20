@@ -139,6 +139,17 @@ impl IoHandler<()> for TransitionHandler {
 			if let Some(ref weak) = *self.client.read() {
 				if let Some(c) = weak.upgrade() {
 					timer_duration = self.duration_remaining_since_last_block(c);
+					// The duration should be at least 1ms and at most self.engine.options.minimum_block_time
+					// clamp() is still an unstable feature:
+					// timer_duration.clamp(Duration::from_millis(1), Duration::from_secs(self.engine.options.minimum_block_time));
+					if timer_duration < Duration::from_millis(1) {
+						timer_duration = Duration::from_millis(1);
+					}
+					if timer_duration > Duration::from_secs(self.engine.options.minimum_block_time)
+					{
+						timer_duration =
+							Duration::from_secs(self.engine.options.minimum_block_time);
+					}
 				}
 			}
 
