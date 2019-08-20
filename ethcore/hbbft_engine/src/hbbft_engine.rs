@@ -511,14 +511,19 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		if header.seal().len() != 1 {
 			return Err(BlockError::InvalidSeal.into());
 		}
+		let netinfo_opt = self.network_info.read();
+		let pub_key = match netinfo_opt.as_ref() {
+			None => {
+				// TODO: Don't require secret key shares for observers, but allow
+				// them to validate.
+				warn!(target: "engine",
+					"NetworkInfo not found. Not validating seal for block #{} ({}).",
+					header.number(), header.hash());
+				return Ok(());
+			}
+			Some(netinfo) => netinfo.public_key_set().public_key(),
+		};
 		let RlpSig(sig) = rlp::decode(header.seal().first().ok_or(BlockError::InvalidSeal)?)?;
-		let pub_key = self
-			.network_info
-			.read()
-			.as_ref()
-			.expect("NetworkInfo not found")
-			.public_key_set()
-			.public_key();
 		if pub_key.verify(&sig, header.bare_hash()) {
 			Ok(())
 		} else {
