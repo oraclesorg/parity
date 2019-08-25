@@ -463,6 +463,9 @@ impl NetworkProtocolHandler for SyncProtocolHandler {
 
 	fn connected(&self, io: &NetworkContext, peer: &PeerId) {
 		trace_time!("sync::connected");
+		if io.is_reserved_peer(*peer) {
+			trace!(target: "consensus", "Connected to reserved peer {:?}", io.session_info(*peer).expect("").id);
+		}
 		// If warp protocol is supported only allow warp handshake
 		let warp_protocol = io.protocol_version(WARP_SYNC_PROTOCOL_ID, *peer).unwrap_or(0) != 0;
 		let warp_context = io.subprotocol_name() == WARP_SYNC_PROTOCOL_ID;
@@ -473,6 +476,7 @@ impl NetworkProtocolHandler for SyncProtocolHandler {
 		let node_id = io.session_info(*peer).unwrap().id;
 		let mut sync_io = NetSyncIo::new(io, &*self.chain, &*self.snapshot_service, &self.overlay);
 		if let Some(vec_msg) = self.message_cache.write().remove(&node_id) {
+			trace!(target: "consensus", "Cached Messages: Trying to send cached messages to {:?}", node_id);
 			for msg in vec_msg {
 				match msg {
 					ChainMessageType::Consensus(message) => self.sync.write().send_consensus_packet(&mut sync_io, message, *peer),
@@ -487,6 +491,9 @@ impl NetworkProtocolHandler for SyncProtocolHandler {
 
 	fn disconnected(&self, io: &NetworkContext, peer: &PeerId) {
 		trace_time!("sync::disconnected");
+		if io.is_reserved_peer(*peer) {
+			trace!(target: "consensus", "Disconnected from reserved peer {:?}", io.session_info(*peer).expect("").id);
+		}
 		if io.subprotocol_name() != WARP_SYNC_PROTOCOL_ID {
 			self.sync.write().on_peer_aborting(&mut NetSyncIo::new(io, &*self.chain, &*self.snapshot_service, &self.overlay), *peer);
 		}
@@ -617,7 +624,8 @@ impl ChainNotify for EthSync {
 			});
 
 			let my_peer_id = match target_peer_id {
-				None => { 
+				None => {
+					trace!(target: "consensus", "Cached Messages: peer {:?} not connected, caching message...", target_peer_id);
 					let mut lock = self.eth_handler.message_cache.write();
 					lock.entry(node_id.clone()).or_default().push(message_type);
 					return; 
