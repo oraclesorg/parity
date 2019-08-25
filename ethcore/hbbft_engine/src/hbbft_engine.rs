@@ -35,7 +35,7 @@ type TargetedMessage = hbbft::TargetedMessage<Message, NodeId>;
 type HbMessage = honey_badger::Message<NodeId>;
 
 /// A message sent between validators that is part of Honey Badger BFT or the block sealing process.
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 enum Message {
 	/// A Honey Badger BFT message.
 	HoneyBadger(HbMessage),
@@ -300,20 +300,11 @@ impl HoneyBadgerBFT {
 			};
 			self.process_seal_step(client, step, block_num);
 		}
-
-		// The following section is commented out since the transaction queue returned by the
-		// EngineClient trait can actually still contain transactions we just submitted at this point.
-		// We need to find a better place to join the next epoch:
-		// Start a new epoch immediately if the transaction queue
-		// is longer than the configured threshold.
-		//		if client.queued_transactions().len() >= self.transactions_trigger {
-		//			self.start_hbbft_epoch(client);
-		//		}
 	}
 
 	fn process_hb_message(&self, message: HbMessage, sender_id: NodeId) -> Result<(), EngineError> {
 		let client = self.client_arc().ok_or(EngineError::RequiresClient)?;
-
+		trace!(target: "consensus", "Received message {:?} from {}", message, sender_id);
 		self.honey_badger
 			.write()
 			.as_mut()
@@ -337,6 +328,7 @@ impl HoneyBadgerBFT {
 		block_num: BlockNumber,
 	) -> Result<(), EngineError> {
 		let client = self.client_arc().ok_or(EngineError::RequiresClient)?;
+		trace!(target: "consensus", "Received sealing message {:?} from {}", message, sender_id);
 		if let Some(latest) = client.block_number(BlockId::Latest) {
 			if latest >= block_num {
 				return Ok(()); // Message is obsolete.
