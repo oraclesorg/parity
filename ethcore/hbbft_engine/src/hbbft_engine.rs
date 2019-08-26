@@ -304,7 +304,7 @@ impl HoneyBadgerBFT {
 
 	fn process_hb_message(&self, message: HbMessage, sender_id: NodeId) -> Result<(), EngineError> {
 		let client = self.client_arc().ok_or(EngineError::RequiresClient)?;
-		trace!(target: "consensus", "Received message {:?} from {}", message, sender_id);
+		trace!(target: "consensus", "Received message         {:?} from {}", message, sender_id);
 		self.honey_badger
 			.write()
 			.as_mut()
@@ -328,7 +328,7 @@ impl HoneyBadgerBFT {
 		block_num: BlockNumber,
 	) -> Result<(), EngineError> {
 		let client = self.client_arc().ok_or(EngineError::RequiresClient)?;
-		trace!(target: "consensus", "Received sealing message {:?} from {}", message, sender_id);
+		trace!(target: "consensus", "Received sealing message  {:?} from {}", message, sender_id);
 		if let Some(latest) = client.block_number(BlockId::Latest) {
 			if latest >= block_num {
 				return Ok(()); // Message is obsolete.
