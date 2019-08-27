@@ -1724,6 +1724,7 @@ dependencies = [
  "ethkey 0.3.0",
  "hbbft 0.1.1 (git+https://github.com/poanetwork/hbbft?rev=70783871150a125d366f02bdd415d27f7464e417)",
  "hbbft_testing 0.1.0 (git+https://github.com/poanetwork/hbbft.git)",
+ "hex_fmt 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "inventory 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.5.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "keccak-hash 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -336,7 +336,7 @@ impl HoneyBadgerBFT {
 					Target::Node(n) => {
 						// for debugging
 						// println!("Sending targeted message: {:?}", m.message);
-						client.send_consensus_message(ser, Some(n));
+						client.send_consensus_message(ser, Some(n.0));
 					}
 					Target::All => {
 						// for debugging
@@ -344,7 +344,7 @@ impl HoneyBadgerBFT {
 
 						if let Some(ref net_info) = *self.network_info.read() {
 							for node_id in net_info.all_ids().filter(|p| p != &net_info.our_id()) {
-								client.send_consensus_message(ser.clone(), Some(*node_id));
+								client.send_consensus_message(ser.clone(), Some(node_id.0));
 							}
 						} else {
 							panic!("Network Info expected to be initialized");
@@ -356,7 +356,7 @@ impl HoneyBadgerBFT {
 								.all_ids()
 								.filter(|p| (p != &net_info.our_id() && !set.contains(p)))
 							{
-								client.send_consensus_message(ser.clone(), Some(*node_id));
+								client.send_consensus_message(ser.clone(), Some(node_id.0));
 							}
 						} else {
 							panic!("Network Info expected to be initialized");
@@ -588,17 +588,15 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 	}
 
 	fn handle_message(&self, message: &[u8], node_id: Option<H512>) -> Result<(), EngineError> {
-		match node_id {
-			Some(node_id) => match serde_json::from_slice(message) {
-				Ok(Message::HoneyBadger(hb_msg)) => self.process_hb_message(hb_msg, node_id),
-				Ok(Message::Sealing(block_num, seal_msg)) => {
-					self.process_sealing_message(seal_msg, node_id, block_num)
-				}
-				Err(_) => Err(EngineError::MalformedMessage(
-					"Serde decoding failed.".into(),
-				)),
-			},
-			None => Err(EngineError::UnexpectedMessage),
+		let node_id = NodeId(node_id.ok_or(EngineError::UnexpectedMessage)?);
+		match serde_json::from_slice(message) {
+			Ok(Message::HoneyBadger(hb_msg)) => self.process_hb_message(hb_msg, node_id),
+			Ok(Message::Sealing(block_num, seal_msg)) => {
+				self.process_sealing_message(seal_msg, node_id, block_num)
+			}
+			Err(_) => Err(EngineError::MalformedMessage(
+				"Serde decoding failed.".into(),
+			)),
 		}
 	}
 
