@@ -33,12 +33,27 @@ mod sealing;
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_helpers;
 
+use std::fmt;
+
 use ethcore::engines::registry::EnginePlugin;
 use ethkey::Public;
 
 pub use hbbft_engine::HoneyBadgerBFT;
 
-type NodeId = Public;
+#[derive(Clone, Copy, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct NodeId(pub Public);
+
+impl fmt::Debug for NodeId {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		write!(f, "{:6}", hex_fmt::HexFmt(&self.0))
+	}
+}
+
+impl fmt::Display for NodeId {
+	fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+		write!(f, "NodeId({})", self.0)
+	}
+}
 
 /// Registers the `HoneyBadgerBFT` engine. This must be called before parsing the chain spec.
 pub fn init() {
