@@ -101,6 +101,9 @@ pub struct AuthorityRoundParams {
 	/// If set, this is the block number at which the consensus engine switches from AuRa to AuRa
 	/// with POSDAO modifications.
 	pub posdao_transition: Option<BlockNumber>,
+	/// The addresses of a contracts that determine the block gas limit with their associated block
+	/// numbers.
+	pub block_gas_limit_contract_transitions: BTreeMap<u64, Address>,
 }
 
 const U16_MAX: usize = ::std::u16::MAX as usize;
@@ -149,7 +152,12 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 				BlockRewardContract::new_from_address(address.into())
 			);
 		}
-
+		let block_gas_limit_contract_transitions: BTreeMap<_, _> =
+			p.block_gas_limit_contract_transitions
+			.unwrap_or_default()
+			.into_iter()
+			.map(|(block_num, address)| (block_num.into(), address.into()))
+			.collect();
 		AuthorityRoundParams {
 			step_durations,
 			validators: new_validator_set_posdao(p.validators, p.posdao_transition.map(Into::into)),
@@ -167,6 +175,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			strict_empty_steps_transition: p.strict_empty_steps_transition.map_or(0, Into::into),
 			randomness_contract_address: p.randomness_contract_address.map(Into::into),
 			posdao_transition: p.posdao_transition.map(Into::into),
+			block_gas_limit_contract_transitions,
 		}
 	}
 }
@@ -534,6 +543,8 @@ pub struct AuthorityRound {
 	/// The block number at which the consensus engine switches from AuRa to AuRa with POSDAO
 	/// modifications.
 	posdao_transition: Option<BlockNumber>,
+	/// The addresses of a contracts that determine the block gas limit.
+	block_gas_limit_contract_transitions: BTreeMap<u64, Address>,
 }
 
 // header-chain validator.
@@ -804,9 +815,10 @@ impl AuthorityRound {
 				maximum_empty_steps: our_params.maximum_empty_steps,
 				quorum_2_3_transition: our_params.quorum_2_3_transition,
 				strict_empty_steps_transition: our_params.strict_empty_steps_transition,
-				machine: machine,
+				machine,
 				randomness_contract_address: our_params.randomness_contract_address,
 				posdao_transition: our_params.posdao_transition,
+				block_gas_limit_contract_transitions: our_params.block_gas_limit_contract_transitions,
 			});
 
 		// Do not initialize timeouts for tests.
@@ -1802,8 +1814,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 	}
 
 	fn gas_limit_override(&self, header: &Header) -> Option<U256> {
-		let (_, &address) = self.machine.params().block_gas_limit_contract.range(..=header.number()).last()?;
-
+		let (_, &address) = self.block_gas_limit_contract_transitions.range(..=header.number()).last()?;
 		let client = match self.client.read().as_ref().and_then(|weak| weak.upgrade()) {
 			Some(client) => client,
 			None => {
@@ -1875,6 +1886,7 @@ mod tests {
 			quorum_2_3_transition: 0,
 			randomness_contract_address: None,
 			posdao_transition: Some(0),
+			block_gas_limit_contract_transitions: BTreeMap::new(),
 		};
 
 		// mutate aura params
