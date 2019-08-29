@@ -34,8 +34,6 @@ pub struct Params {
 	pub maximum_extra_data_size: Uint,
 	/// Minimum gas limit.
 	pub min_gas_limit: Uint,
-	/// The address of a contract that determines the block gas limit.
-	pub block_gas_limit_contract: Option<BlockGasLimitContract>,
 
 	/// Network id.
 	#[serde(rename = "networkID")]
@@ -131,28 +129,6 @@ pub struct Params {
 	pub kip6_transition: Option<Uint>,
 }
 
-/// A contract that determines block gas limits can be configured either as a single address, or as a map, assigning
-/// to each starting block number the contract address that should be used from that block on.
-#[derive(Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields, untagged)]
-pub enum BlockGasLimitContract {
-	/// A single address for a block gas limit contract.
-	Single(Address),
-	/// A map from block numbers to the contract addresses that should be used for the gas limit after that block.
-	Transitions(BTreeMap<Uint, Address>),
-}
-
-impl From<BlockGasLimitContract> for BTreeMap<u64, H160> {
-	fn from(contract: BlockGasLimitContract) -> Self {
-		match contract {
-			BlockGasLimitContract::Single(Address(addr)) => iter::once((0, addr)).collect(),
-			BlockGasLimitContract::Transitions(transitions) => {
-				transitions.into_iter().map(|(Uint(block), Address(addr))| (block.into(), addr)).collect()
-			}
-		}
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use std::str::FromStr;
@@ -160,7 +136,7 @@ mod tests {
 	use uint::Uint;
 	use ethereum_types::{U256, H160};
 	use hash::Address;
-	use spec::params::{BlockGasLimitContract, Params};
+	use spec::params::Params;
 
 	#[test]
 	fn params_deserialization() {
@@ -173,11 +149,7 @@ mod tests {
 			"accountStartNonce": "0x01",
 			"gasLimitBoundDivisor": "0x20",
 			"maxCodeSize": "0x1000",
-			"wasmActivationTransition": "0x1010",
-			"blockGasLimitContract": {
-				"10": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-				"20": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-			}
+			"wasmActivationTransition": "0x1010"
 		}"#;
 
 		let deserialized: Params = serde_json::from_str(s).unwrap();
