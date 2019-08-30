@@ -122,6 +122,7 @@ impl IoHandler<()> for TransitionHandler {
 
 	fn timeout(&self, io: &IoContext<()>, timer: TimerToken) {
 		if timer == ENGINE_TIMEOUT_TOKEN {
+			trace!(target: "consensus", "Honey Badger IoHandler timeout called");
 			// The block may be complete, but not have been ready to seal - trigger a new seal attempt.
 			// TODO: In theory, that should not happen. The seal is ready exactly when the sealing entry is `Complete`.
 			if let Some(ref weak) = *self.client.read() {
