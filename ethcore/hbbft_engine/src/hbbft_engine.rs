@@ -252,8 +252,13 @@ impl HoneyBadgerBFT {
 	fn process_output(&self, client: Arc<dyn EngineClient>, output: Vec<Batch>) {
 		// TODO: Multiple outputs are possible,
 		//       process all outputs, respecting their epoch context.
+		if output.len() > 1 {
+			error!(target: "consensus", "UNHANDLED EPOCH OUTPUTS!");
+		}
 		let batch = match output.first() {
-			None => return,
+			None => {
+				return
+			},
 			Some(batch) => batch,
 		};
 
@@ -284,7 +289,7 @@ impl HoneyBadgerBFT {
 		if let Some(block) = client.create_pending_block_at(batch_txns, timestamp, batch.epoch) {
 			let block_num = block.header.number();
 			let hash = block.header.bare_hash();
-			trace!(target: "engine", "Sending signature share of {} for block {}", hash, block_num);
+			trace!(target: "consensus", "Sending signature share of {} for block {}", hash, block_num);
 			let step = match self
 				.sealing
 				.write()
@@ -295,11 +300,13 @@ impl HoneyBadgerBFT {
 				Ok(step) => step,
 				Err(err) => {
 					// TODO: Error handling
-					error!(target: "engine", "Error creating signature share for block {}: {:?}", block_num, err);
+					error!(target: "consensus", "Error creating signature share for block {}: {:?}", block_num, err);
 					return;
 				}
 			};
 			self.process_seal_step(client, step, block_num);
+		} else {
+			error!(target: "consensus", "Could not create pending block for hbbft epoch {}: ", batch.epoch);
 		}
 	}
 
