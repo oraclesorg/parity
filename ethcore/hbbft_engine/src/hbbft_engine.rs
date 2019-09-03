@@ -331,41 +331,31 @@ impl HoneyBadgerBFT {
 		I: IntoIterator<Item = TargetedMessage>,
 	{
 		for m in messages {
-			if let Ok(ser) = serde_json::to_vec(&m.message) {
-				match m.target {
-					Target::Node(n) => {
-						// for debugging
-						// println!("Sending targeted message: {:?}", m.message);
-						client.send_consensus_message(ser, Some(n.0));
-					}
-					Target::All => {
-						// for debugging
-						// println!("Sending broadcast message: {:?}", m.message);
+			let ser = serde_json::to_vec(&m.message).unwrap_or_else(|err| {
+				error!(target: "engine", "Serialization of consensus message failed: {:?}", err);
+				panic!("Serialization of consensus message failed!");
+			});
+			let opt_net_info = self.network_info.read();
+			let net_info = opt_net_info
+				.as_ref()
+				.expect("Network Info expected to be initialized");
+			match m.target {
+				Target::Nodes(set) => {
+					// for debugging
+					// println!("Sending broadcast message: {:?}", m.message);
 
-						if let Some(ref net_info) = *self.network_info.read() {
-							for node_id in net_info.all_ids().filter(|p| p != &net_info.our_id()) {
-								client.send_consensus_message(ser.clone(), Some(node_id.0));
-							}
-						} else {
-							panic!("Network Info expected to be initialized");
-						}
-					}
-					Target::AllExcept(set) => {
-						if let Some(ref net_info) = *self.network_info.read() {
-							for node_id in net_info
-								.all_ids()
-								.filter(|p| (p != &net_info.our_id() && !set.contains(p)))
-							{
-								client.send_consensus_message(ser.clone(), Some(node_id.0));
-							}
-						} else {
-							panic!("Network Info expected to be initialized");
-						}
+					for node_id in set.into_iter().filter(|p| p != net_info.our_id()) {
+						client.send_consensus_message(ser.clone(), Some(node_id.0));
 					}
 				}
-			} else {
-				error!(target: "engine", "Serialization of consensus message failed!");
-				panic!("Serialization of consensus message failed!");
+				Target::AllExcept(set) => {
+					for node_id in net_info
+						.all_ids()
+						.filter(|p| (p != &net_info.our_id() && !set.contains(p)))
+					{
+						client.send_consensus_message(ser.clone(), Some(node_id.0));
+					}
+				}
 			}
 		}
 	}
