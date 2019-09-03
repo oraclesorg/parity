@@ -1048,7 +1048,6 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		header_expected_seal_fields(header, self.empty_steps_transition)
 	}
 
-	#[cfg(test)]
 	fn step(&self) {
 		self.step.inner.increment();
 		self.step.can_propose.store(true, AtomicOrdering::SeqCst);
