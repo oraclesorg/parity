@@ -140,18 +140,9 @@ where
 	let sks_serialized = serde_json::to_string(&wrapper).unwrap();
 	mining.insert("hbbft_secret_share".into(), Value::String(sks_serialized));
 
-	// Write the Secret Key
-	let wrapper = SerdeSecret(net_info.secret_key());
-	let sk_serialized = serde_json::to_string(&wrapper).unwrap();
-	mining.insert("hbbft_secret_key".into(), Value::String(sk_serialized));
-
 	// Write the Public Key Set
 	let pks_serialized = serde_json::to_string(net_info.public_key_set()).unwrap();
 	mining.insert("hbbft_public_key_set".into(), Value::String(pks_serialized));
-
-	// Write the Public Keys
-	let pk_serialized = serde_json::to_string(net_info.public_key_map()).unwrap();
-	mining.insert("hbbft_public_keys".into(), Value::String(pk_serialized));
 
 	// Write the validator IP Addresses
 	let enode_map: BTreeMap<_, _> = enodes_map
@@ -232,7 +223,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use hbbft::crypto::{PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
+	use hbbft::crypto::{PublicKeySet, SecretKeyShare};
 	use rand;
 	use serde::Deserialize;
 	use std::collections::BTreeMap;
@@ -255,19 +246,14 @@ mod tests {
 			serde_json::from_str(&options.mining.hbbft_secret_share).unwrap();
 		assert_eq!(*net_info.secret_key_share().unwrap(), *secret_key_share);
 
-		// Parse and compare the Secret Key
-		let secret_key: SerdeSecret<SecretKey> =
-			serde_json::from_str(&options.mining.hbbft_secret_key).unwrap();
-		assert_eq!(*net_info.secret_key(), *secret_key);
-
 		// Parse and compare the Public Key Set
 		let pks: PublicKeySet = serde_json::from_str(&options.mining.hbbft_public_key_set).unwrap();
 		assert_eq!(*net_info.public_key_set(), pks);
 
-		// Parse and compare the Node IDs and Public Keys
-		let pk: BTreeMap<N, PublicKey> =
-			serde_json::from_str(&options.mining.hbbft_public_keys).unwrap();
-		assert_eq!(*net_info.public_key_map(), pk);
+		// Parse and compare the Node IDs.
+		let ips: BTreeMap<N, String> =
+			serde_json::from_str(&options.mining.hbbft_validator_ip_addresses).unwrap();
+		assert!(net_info.all_ids().eq(ips.keys()));
 	}
 
 	#[test]

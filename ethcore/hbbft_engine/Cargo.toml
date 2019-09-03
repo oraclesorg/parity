@@ -17,7 +17,7 @@ ethcore-io = { path = "../../util/io" }
 ethcore-miner = { path = "../../miner" }
 ethereum-types = "0.4"
 ethkey = { path = "../../accounts/ethkey" }
-hbbft = { git = "https://github.com/poanetwork/hbbft", rev = "66033a9f7f323d3a04a731bf832abfff62f0ed64" }
+hbbft = { git = "https://github.com/poanetwork/hbbft", rev = "fe17fc9850f2f1078a6f99463e46c7f581d58764" }
 hbbft_testing = { git = "https://github.com/poanetwork/hbbft" }
 hex_fmt = "0.3.0"
 inventory = "0.1"

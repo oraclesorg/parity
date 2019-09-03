@@ -444,7 +444,7 @@ mod tests {
 		let addr = "127.0.0.1:19995".parse().unwrap();
 		let stratum = Stratum::start(
 			&addr,
-			Arc::new(DummyManager::build().of_initial(r#"["dummy autorize payload"]"#)),
+			Arc::new(DummyManager::build().of_initial(r#"["dummy authorize payload"]"#)),
 			None
 		).expect("There should be no error starting stratum");
 
@@ -474,7 +474,7 @@ mod tests {
 			})
 			.map_err(|err: timeout::Error<()>| panic!("Timeout: {:?}", err))
 			.and_then(move |stream| {
-				trace!(target: "stratum", "Pusing work to peers");
+				trace!(target: "stratum", "Pushing work to peers");
 				stratum.push_work_all(r#"{ "00040008", "100500" }"#.to_owned())
 					.expect("Pushing work should produce no errors");
 				Timeout::new(future::ok(stream), ::std::time::Duration::from_millis(100))

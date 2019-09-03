@@ -71,7 +71,6 @@ mod tests {
 	use proptest::{prelude::ProptestConfig, proptest};
 	use rand::{Rng, SeedableRng};
 	use std::collections::BTreeMap;
-	use std::ops::Range;
 
 	proptest! {
 		#![proptest_config(ProptestConfig {
@@ -103,13 +102,11 @@ mod tests {
 		}
 	}
 
-	fn generate_ip_addresses(ids: Range<usize>) -> BTreeMap<usize, String> {
-		let mut map = BTreeMap::new();
-		for n in ids.into_iter() {
-			let id = format!("{}", n);
-			map.insert(n, id);
-		}
-		map
+	fn generate_ip_addresses<'a, I>(ids: I) -> BTreeMap<Public, String>
+	where
+		I: IntoIterator<Item = &'a Public>,
+	{
+		ids.into_iter().map(|id| (*id, format!("{}", id))).collect()
 	}
 
 	fn generate_ids(num_ids: usize) -> Vec<Public> {
@@ -133,9 +130,10 @@ mod tests {
 		super::init();
 
 		let mut rng = TestRng::from_seed(seed);
-		let net_infos = NetworkInfo::generate_map(generate_ids(1), &mut rng)
+		let ids = generate_ids(1);
+		let ips_map = generate_ip_addresses(&ids);
+		let net_infos = NetworkInfo::generate_map(ids, &mut rng)
 			.expect("NetworkInfo generation is expected to always succeed");
-		let ips_map = generate_ip_addresses(0..1usize);
 
 		let net_info = net_infos
 			.iter()
@@ -185,9 +183,9 @@ mod tests {
 
 	fn test_with_size<R: Rng>(rng: &mut R, size: usize) {
 		let ids = generate_ids(size);
+		let ips_map = generate_ip_addresses(&ids);
 		let net_infos =
 			NetworkInfo::generate_map(ids, rng).expect("NetworkInfo generation to always succeed");
-		let ips_map = generate_ip_addresses(0..size);
 		let nodes: BTreeMap<_, _> = net_infos
 			.into_iter()
 			.map(|(n, netinfo)| (n, hbbft_client_setup(netinfo, &ips_map)))
@@ -243,9 +241,9 @@ mod tests {
 		// one contribution, but if 2 or more are received they should!
 		let network_size: usize = 4;
 		let ids = generate_ids(network_size);
+		let ips_map = generate_ip_addresses(&ids);
 		let net_infos = NetworkInfo::generate_map(ids, &mut rng)
 			.expect("NetworkInfo generation is expected to always succeed");
-		let ips_map = generate_ip_addresses(0..network_size);
 
 		let nodes: BTreeMap<_, _> = net_infos
 			.into_iter()

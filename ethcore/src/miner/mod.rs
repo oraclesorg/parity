@@ -59,12 +59,8 @@ pub struct HbbftOptions {
 	pub hbbft_our_id: String,
 	/// Threshold Cryptography secret share.
 	pub hbbft_secret_share: String,
-	/// The secret key of this hbbft validator.
-	pub hbbft_secret_key: String,
 	/// Threshold Cryptography public key shares.
 	pub hbbft_public_key_set: String,
-	/// The public keys of all hbbft validators.
-	pub hbbft_public_keys: String,
 	/// The IP addresses/ports of all hbbft validators.
 	pub hbbft_validator_ip_addresses: String,
 }
