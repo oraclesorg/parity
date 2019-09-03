@@ -12,7 +12,7 @@ use ethcore::machine::EthereumMachine;
 use ethcore::miner::HbbftOptions;
 use ethereum_types::H512;
 use hbbft::crypto::serde_impl::SerdeSecret;
-use hbbft::crypto::{PublicKey, PublicKeySet, SecretKey, SecretKeyShare};
+use hbbft::crypto::{PublicKey, PublicKeySet, SecretKeyShare};
 use hbbft::honey_badger::{self, HoneyBadgerBuilder, Step};
 use hbbft::{NetworkInfo, Target};
 use io::{IoContext, IoHandler, IoService, TimerToken};
@@ -187,21 +187,14 @@ impl HoneyBadgerBFT {
 
 	fn new_network_info(options: HbbftOptions) -> Option<NetworkInfo<NodeId>> {
 		let our_id: NodeId = serde_json::from_str(&options.hbbft_our_id).ok()?;
-		let secret_key_share: SerdeSecret<SecretKeyShare> =
+		let secret_key_share_wrap: SerdeSecret<SecretKeyShare> =
 			serde_json::from_str(&options.hbbft_secret_share).ok()?;
-		let secret_key: SerdeSecret<SecretKey> =
-			serde_json::from_str(&options.hbbft_secret_key).ok()?;
+		let secret_key_share = secret_key_share_wrap.into_inner();
 		let pks: PublicKeySet = serde_json::from_str(&options.hbbft_public_key_set).ok()?;
-		let pk: BTreeMap<NodeId, PublicKey> =
-			serde_json::from_str(&options.hbbft_public_keys).ok()?;
+		let ips: BTreeMap<NodeId, String> =
+			serde_json::from_str(&options.hbbft_validator_ip_addresses).ok()?;
 
-		Some(NetworkInfo::new(
-			our_id,
-			(*secret_key_share).clone(),
-			pks,
-			(*secret_key).clone(),
-			pk,
-		))
+		Some(NetworkInfo::new(our_id, secret_key_share, pks, ips.keys()))
 	}
 
 	fn new_honey_badger(&self, options: HbbftOptions) -> Option<HoneyBadger> {
@@ -331,10 +324,8 @@ impl HoneyBadgerBFT {
 		I: IntoIterator<Item = TargetedMessage>,
 	{
 		for m in messages {
-			let ser = serde_json::to_vec(&m.message).unwrap_or_else(|err| {
-				error!(target: "engine", "Serialization of consensus message failed: {:?}", err);
-				panic!("Serialization of consensus message failed!");
-			});
+			let ser =
+				serde_json::to_vec(&m.message).expect("Serialization of consensus message failed");
 			let opt_net_info = self.network_info.read();
 			let net_info = opt_net_info
 				.as_ref()

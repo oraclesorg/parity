@@ -35,34 +35,28 @@ pub struct HbbftTestData {
 
 fn serialize_netinfo(
 	net_info: NetworkInfo<Public>,
-	ips_map: &BTreeMap<usize, String>,
+	ips_map: &BTreeMap<Public, String>,
 ) -> HbbftOptions {
 	let hbbft_our_id = serde_json::to_string(&net_info.our_id()).unwrap();
 
 	let wrapper = SerdeSecret(net_info.secret_key_share().unwrap());
 	let hbbft_secret_share = serde_json::to_string(&wrapper).unwrap();
 
-	let wrapper = SerdeSecret(net_info.secret_key());
-	let hbbft_secret_key = serde_json::to_string(&wrapper).unwrap();
-
 	let hbbft_public_key_set = serde_json::to_string(net_info.public_key_set()).unwrap();
-	let hbbft_public_keys = serde_json::to_string(net_info.public_key_map()).unwrap();
 
 	let hbbft_validator_ip_addresses = serde_json::to_string(ips_map).unwrap();
 
 	HbbftOptions {
 		hbbft_our_id,
 		hbbft_secret_share,
-		hbbft_secret_key,
 		hbbft_public_key_set,
-		hbbft_public_keys,
 		hbbft_validator_ip_addresses,
 	}
 }
 
 pub fn hbbft_client_setup(
 	net_info: NetworkInfo<Public>,
-	ips_map: &BTreeMap<usize, String>,
+	ips_map: &BTreeMap<Public, String>,
 ) -> HbbftTestData {
 	let client = hbbft_client();
 

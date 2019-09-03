@@ -291,9 +291,7 @@ pub struct MinerExtras {
 	pub local_accounts: HashSet<Address>,
 	pub hbbft_our_id: Option<String>,
 	pub hbbft_secret_key_share: Option<String>,
-	pub hbbft_secret_key: Option<String>,
 	pub hbbft_public_key_set: Option<String>,
-	pub hbbft_public_keys: Option<String>,
 	pub hbbft_validator_ip_addresses: Option<String>,
 }
 
@@ -308,9 +306,7 @@ impl Default for MinerExtras {
 			local_accounts: Default::default(),
 			hbbft_our_id: None,
 			hbbft_secret_key_share: None,
-			hbbft_secret_key: None,
 			hbbft_public_key_set: None,
-			hbbft_public_keys: None,
 			hbbft_validator_ip_addresses: None,
 		}
 	}
