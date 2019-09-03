@@ -22,7 +22,7 @@ extern crate rlp;
 extern crate ethcore;
 extern crate parity_bytes as bytes;
 extern crate ethereum_types;
-extern crate jsonrpc_core as core;
+extern crate jsonrpc_core;
 extern crate jsonrpc_http_server as http;
 
 pub mod error;
@@ -32,8 +32,8 @@ use std::thread;
 use std::sync::{mpsc, Arc};
 use std::net::{SocketAddr, IpAddr};
 
-use core::futures::future::{self, FutureResult};
-use core::futures::{self, Future};
+use jsonrpc_core::futures::future::{self, FutureResult};
+use jsonrpc_core::futures::{self, Future};
 use ethcore::client::BlockChainClient;
 use http::hyper::{self, server, Method, StatusCode, Body,
 	header::{self, HeaderValue},

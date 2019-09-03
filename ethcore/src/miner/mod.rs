@@ -148,11 +148,11 @@ pub trait MinerService : Send + Sync {
 
 	/// Temporary: This data will be supplied by contracts instead.
 	/// TODO: Remove once contracts supply the necessary data.
-	fn set_hbbft_options(&self, options: HbbftOptions);
+	fn set_hbbft_options(&self, options: HbbftOptions) {}
 
 	/// Temporary: This data will be supplied by contracts instead.
 	/// TODO: Remove once contracts supply the necessary data.
-	fn hbbft_options(&self) -> HbbftOptions;
+	fn hbbft_options(&self) -> HbbftOptions { unimplemented!() }
 
 	/// Set info necessary to sign consensus messages and block authoring.
 	///
