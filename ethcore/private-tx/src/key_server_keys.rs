@@ -22,6 +22,7 @@ use ethereum_types::{H256, Address};
 use call_contract::{CallContract, RegistryInfo};
 use ethcore::client::BlockId;
 use ethabi::FunctionOutputDecoder;
+use types::header::Header;
 
 const ACL_CHECKER_CONTRACT_REGISTRY_NAME: &'static str = "secretstore_acl_checker";
 
