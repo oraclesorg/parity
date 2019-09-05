@@ -34,20 +34,16 @@ extern crate serde_json;
 #[cfg(test)]
 extern crate tempdir;
 
-#[cfg(feature = "bench")]
+// TODO: This should be private; only needed for benches.
 pub mod compute;
-#[cfg(not(feature = "bench"))]
-mod compute;
 
 mod seed_compute;
 mod cache;
 mod keccak;
 mod shared;
 
-#[cfg(feature = "bench")]
+// TODO: This should be private; only needed for benches.
 pub mod progpow;
-#[cfg(not(feature = "bench"))]
-mod progpow;
 
 pub use cache::{NodeCacheBuilder, OptimizeFor};
 pub use compute::{ProofOfWork, quick_get_difficulty, slow_hash_block_number};
