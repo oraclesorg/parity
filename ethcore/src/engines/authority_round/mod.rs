@@ -545,8 +545,8 @@ pub struct AuthorityRound {
 	posdao_transition: Option<BlockNumber>,
 	/// The addresses of a contracts that determine the block gas limit.
 	block_gas_limit_contract_transitions: BTreeMap<u64, Address>,
-	/// History of block hashes recently received from peers.
-	received_block_hashes: RwLock<BTreeMap<(u64, Address), H256>>,
+	/// History of step hashes recently received from peers.
+	received_step_hashes: RwLock<BTreeMap<(u64, Address), H256>>,
 }
 
 // header-chain validator.
@@ -637,7 +637,7 @@ fn header_expected_seal_fields(header: &Header, empty_steps_transition: u64) -> 
 
 fn header_step(header: &Header, empty_steps_transition: u64) -> Result<u64, ::rlp::DecoderError> {
 	Rlp::new(&header.seal().get(0).unwrap_or_else(||
-		panic!("was either checked with verify_block_basic or is genesis; has {} fields; qed (Make sure the spec
+		panic!("was either checked with verify_block_basic or is genesis; has {} fields; qed (Make sure the spec \
 				file has a correct genesis seal)", header_expected_seal_fields(header, empty_steps_transition))
 	))
 	.as_val()
@@ -821,7 +821,7 @@ impl AuthorityRound {
 				randomness_contract_address: our_params.randomness_contract_address,
 				posdao_transition: our_params.posdao_transition,
 				block_gas_limit_contract_transitions: our_params.block_gas_limit_contract_transitions,
-				received_block_hashes: RwLock::new(Default::default()),
+				received_step_hashes: RwLock::new(Default::default()),
 			});
 
 		// Do not initialize timeouts for tests.
@@ -1433,17 +1433,19 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			debug!(target: "engine", "Unable to prepare block: missing client ref.");
 			EngineError::RequiresClient
 		})?;
+		// Remove older step hash records.
+		if block.header.number() > 0 {
+			let parent = client.block_header(::client::BlockId::Hash(*block.header.parent_hash()))
+				.expect("Block number > 0, so parent header must exist. QED")
+				.decode()?;
+			let parent_step = header_step(&parent, self.empty_steps_transition)?;
+			let oldest_step = parent_step.saturating_sub(SIBLING_MALICE_DETECTION_PERIOD);
+			let mut rsh = self.received_step_hashes.write();
+			let new_rsh = rsh.split_off(&(oldest_step, Address::zero()));
+			*rsh = new_rsh;
+		}
 		let full_client = client.as_full_client()
 			.ok_or_else(|| EngineError::FailedSystemCall("Failed to upgrade to BlockchainClient.".to_string()))?;
-
-		// Remove older block hash records.
-		let oldest_block_number = full_client
-			.best_block_header()
-			.number()
-			.saturating_sub(SIBLING_MALICE_DETECTION_PERIOD);
-		let mut rbh = self.received_block_hashes.write();
-		let new_rbh = rbh.split_off(&(oldest_block_number, Address::zero()));
-		*rbh = new_rbh;
 
 		// Skip the rest of the function unless there has been a transition to POSDAO AuRa.
 		if self.posdao_transition.map_or(true, |block_num| block.header.number() < block_num) {
@@ -1542,13 +1544,13 @@ impl Engine<EthereumMachine> for AuthorityRound {
 			Err(EngineError::DoubleVote(*header.author()))?;
 		}
 		// Report malice if the validator produced other sibling blocks in the same step.
-		let received_block_key = (header.number(), *header.author());
+		let received_step_key = (step, *header.author());
 		let new_hash = header.hash();
-		if self.received_block_hashes.read().get(&received_block_key).into_iter().any(|h| *h != new_hash) {
+		if self.received_step_hashes.read().get(&received_step_key).into_iter().any(|h| *h != new_hash) {
 			trace!(target: "engine", "Validator {} produced sibling blocks", header.author());
 			self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
 		} else {
-			self.received_block_hashes.write().insert(received_block_key, new_hash);
+			self.received_step_hashes.write().insert(received_step_key, new_hash);
 		}
 
 		// If empty step messages are enabled we will validate the messages in the seal, missing messages are not
