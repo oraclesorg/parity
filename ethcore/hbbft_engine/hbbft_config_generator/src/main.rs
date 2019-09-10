@@ -14,6 +14,7 @@ use hbbft::NetworkInfo;
 use rustc_hex::ToHex;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::fmt::Write;
 use std::fs;
 use toml::{map::Map, Value};
 
@@ -61,7 +62,12 @@ fn to_toml_array(vec: Vec<&str>) -> Value {
 	Value::Array(vec.iter().map(|s| Value::String(s.to_string())).collect())
 }
 
-fn to_toml<N>(net_info: &NetworkInfo<N>, enodes_map: &BTreeMap<N, Enode>, i: usize) -> Value
+fn to_toml<N>(
+	net_info: &NetworkInfo<N>,
+	enodes_map: &BTreeMap<N, Enode>,
+	i: usize,
+	for_docker: bool,
+) -> Value
 where
 	N: hbbft::NodeIdT + Serialize,
 {
@@ -70,9 +76,17 @@ where
 	let base_ws_port = 9540i64;
 
 	let mut parity = Map::new();
-	parity.insert("chain".into(), Value::String("./spec/spec.json".into()));
-	let node_data_path = format!("parity-data/node{}", i);
-	parity.insert("base_path".into(), Value::String(node_data_path));
+	if for_docker {
+		parity.insert("chain".into(), Value::String("spec.json".into()));
+		parity.insert("chain".into(), Value::String("spec.json".into()));
+		let node_data_path = "data".to_string();
+		parity.insert("base_path".into(), Value::String(node_data_path));
+	} else {
+		parity.insert("chain".into(), Value::String("./spec/spec.json".into()));
+		parity.insert("chain".into(), Value::String("./spec/spec.json".into()));
+		let node_data_path = format!("parity-data/node{}", i);
+		parity.insert("base_path".into(), Value::String(node_data_path));
+	}
 
 	let mut ui = Map::new();
 	ui.insert("disable".into(), Value::Boolean(true));
@@ -81,10 +95,17 @@ where
 	network.insert("port".into(), Value::Integer(base_port + i as i64));
 	network.insert("nat".into(), Value::String("none".into()));
 	network.insert("interface".into(), Value::String("local".into()));
-	network.insert(
-		"reserved_peers".into(),
-		Value::String("parity-data/reserved-peers".into()),
-	);
+	if for_docker {
+		network.insert(
+			"reserved_peers".into(),
+			Value::String("reserved-peers".into()),
+		);
+	} else {
+		network.insert(
+			"reserved_peers".into(),
+			Value::String("parity-data/reserved-peers".into()),
+		);
+	}
 
 	let mut rpc = Map::new();
 	rpc.insert("cors".into(), to_toml_array(vec!["all"]));
@@ -121,14 +142,16 @@ where
 	ipfs.insert("enable".into(), Value::Boolean(false));
 
 	let mut account = Map::new();
-	account.insert(
-		"unlock".into(),
-		to_toml_array(vec![
-			"0xbbcaa8d48289bb1ffcf9808d9aa4b1d215054c78",
-			"0x32e4e4c7c5d1cea5db5f9202a9e4d99e56c91a24",
-		]),
-	);
-	account.insert("password".into(), to_toml_array(vec!["config/password"]));
+	if !for_docker {
+		account.insert(
+			"unlock".into(),
+			to_toml_array(vec![
+				"0xbbcaa8d48289bb1ffcf9808d9aa4b1d215054c78",
+				"0x32e4e4c7c5d1cea5db5f9202a9e4d99e56c91a24",
+			]),
+		);
+		account.insert("password".into(), to_toml_array(vec!["config/password"]));
+	}
 
 	let mut mining = Map::new();
 
@@ -189,6 +212,12 @@ fn main() {
 				.required(true)
 				.index(1),
 		)
+		.arg(
+			Arg::with_name("DOCKER")
+				.help("Generate for Docker")
+				.default_value("false")
+				.index(2),
+		)
 		.get_matches();
 
 	let num_nodes: usize = matches
@@ -196,7 +225,14 @@ fn main() {
 		.expect("Number of nodes input required")
 		.parse()
 		.expect("Input must be of integer type");
+
 	println!("Number of config files to generate: {}", num_nodes);
+
+	let for_docker: bool = matches
+		.value_of("DOCKER")
+		.expect("Should return the default value if not set")
+		.parse()
+		.expect("Input must be of bool type");
 
 	let enodes_map = generate_enodes(num_nodes);
 	let mut rng = rand::thread_rng();
@@ -204,17 +240,23 @@ fn main() {
 		NetworkInfo::generate_map(enodes_map.keys().cloned().collect::<Vec<_>>(), &mut rng)
 			.expect("NetworkInfo generation expected to succeed");
 
+	let mut reserved_peers: String = String::new();
 	for (n, info) in net_infos.iter() {
 		let enode = enodes_map.get(n).expect("validator id must be mapped");
+		writeln!(&mut reserved_peers, "{}", enode.to_string())
+			.expect("enode should be written to the reserved peers string");
+		//		reserved_peers.push(enode.to_string());
+		//		reserved_peers.push('\n');
 		let i = enode.idx;
 		let file_name = format!("hbbft_validator_{}.toml", i);
-		let toml_string = toml::to_string(&to_toml(info, &enodes_map, i))
+		let toml_string = toml::to_string(&to_toml(info, &enodes_map, i, for_docker))
 			.expect("TOML string generation should succeed");
 		fs::write(file_name, toml_string).expect("Unable to write config file");
 
 		let file_name = format!("hbbft_validator_key_{}", i);
 		fs::write(file_name, enode.secret.to_hex()).expect("Unable to write config file");
 	}
+	fs::write("reserved_peers", reserved_peers).expect("Unable to write reserved_peers file");
 }
 
 #[cfg(test)]
@@ -255,7 +297,7 @@ mod tests {
 		let enodes_map = generate_enodes(1);
 		let net_infos = NetworkInfo::generate_map(enodes_map.keys().cloned(), &mut rng).unwrap();
 		let net_info = net_infos.iter().nth(0).unwrap().1;
-		let toml_string = toml::to_string(&to_toml(net_info, &enodes_map, 1)).unwrap();
+		let toml_string = toml::to_string(&to_toml(net_info, &enodes_map, 1, false)).unwrap();
 		let config: TomlHbbftOptions = toml::from_str(&toml_string).unwrap();
 		compare(net_info, &config);
 	}
