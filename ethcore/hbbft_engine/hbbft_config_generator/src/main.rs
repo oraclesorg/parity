@@ -1,3 +1,4 @@
+#[macro_use]
 extern crate clap;
 extern crate ethcore;
 extern crate ethkey;
@@ -66,7 +67,7 @@ fn to_toml<N>(
 	net_info: &NetworkInfo<N>,
 	enodes_map: &BTreeMap<N, Enode>,
 	i: usize,
-	for_docker: bool,
+	config_type: &ConfigType,
 ) -> Value
 where
 	N: hbbft::NodeIdT + Serialize,
@@ -76,16 +77,19 @@ where
 	let base_ws_port = 9540i64;
 
 	let mut parity = Map::new();
-	if for_docker {
-		parity.insert("chain".into(), Value::String("spec.json".into()));
-		parity.insert("chain".into(), Value::String("spec.json".into()));
-		let node_data_path = "data".to_string();
-		parity.insert("base_path".into(), Value::String(node_data_path));
-	} else {
-		parity.insert("chain".into(), Value::String("./spec/spec.json".into()));
-		parity.insert("chain".into(), Value::String("./spec/spec.json".into()));
-		let node_data_path = format!("parity-data/node{}", i);
-		parity.insert("base_path".into(), Value::String(node_data_path));
+	match config_type {
+		ConfigType::PosdaoSetup => {
+			parity.insert("chain".into(), Value::String("./spec/spec.json".into()));
+			parity.insert("chain".into(), Value::String("./spec/spec.json".into()));
+			let node_data_path = format!("parity-data/node{}", i);
+			parity.insert("base_path".into(), Value::String(node_data_path));
+		}
+		_ => {
+			parity.insert("chain".into(), Value::String("spec.json".into()));
+			parity.insert("chain".into(), Value::String("spec.json".into()));
+			let node_data_path = "data".to_string();
+			parity.insert("base_path".into(), Value::String(node_data_path));
+		}
 	}
 
 	let mut ui = Map::new();
@@ -95,16 +99,19 @@ where
 	network.insert("port".into(), Value::Integer(base_port + i as i64));
 	network.insert("nat".into(), Value::String("none".into()));
 	network.insert("interface".into(), Value::String("local".into()));
-	if for_docker {
-		network.insert(
-			"reserved_peers".into(),
-			Value::String("reserved-peers".into()),
-		);
-	} else {
-		network.insert(
-			"reserved_peers".into(),
-			Value::String("parity-data/reserved-peers".into()),
-		);
+	match config_type {
+		ConfigType::PosdaoSetup => {
+			network.insert(
+				"reserved_peers".into(),
+				Value::String("parity-data/reserved-peers".into()),
+			);
+		}
+		_ => {
+			network.insert(
+				"reserved_peers".into(),
+				Value::String("reserved-peers".into()),
+			);
+		}
 	}
 
 	let mut rpc = Map::new();
@@ -142,7 +149,7 @@ where
 	ipfs.insert("enable".into(), Value::Boolean(false));
 
 	let mut account = Map::new();
-	if !for_docker {
+	if let ConfigType::PosdaoSetup = config_type {
 		account.insert(
 			"unlock".into(),
 			to_toml_array(vec![
@@ -151,34 +158,53 @@ where
 			]),
 		);
 		account.insert("password".into(), to_toml_array(vec!["config/password"]));
-	}
+	};
 
 	let mut mining = Map::new();
 
-	// Write the Secret Key Share
-	let wrapper = SerdeSecret(net_info.secret_key_share().unwrap());
-	let sks_serialized = serde_json::to_string(&wrapper).unwrap();
-	mining.insert("hbbft_secret_share".into(), Value::String(sks_serialized));
+	match config_type {
+		ConfigType::Rpc => {},
+		_ => {
+			// Write Node ID
+			let our_id_serialized = serde_json::to_string(&net_info.our_id()).unwrap();
+			mining.insert("hbbft_our_id".into(), Value::String(our_id_serialized));
+
+			// Write the Secret Key Share
+			let wrapper = SerdeSecret(net_info.secret_key_share().unwrap());
+			let sks_serialized = serde_json::to_string(&wrapper).unwrap();
+			mining.insert("hbbft_secret_share".into(), Value::String(sks_serialized));
+
+			// Write the Secret Key
+			let wrapper = SerdeSecret(net_info.secret_key());
+			let sk_serialized = serde_json::to_string(&wrapper).unwrap();
+			mining.insert("hbbft_secret_key".into(), Value::String(sk_serialized));
+
+			// Write the Public Keys
+			let pk_serialized = serde_json::to_string(net_info.public_key_map()).unwrap();
+			mining.insert("hbbft_public_keys".into(), Value::String(pk_serialized));
+
+			// Write the validator IP Addresses
+			let enode_map: BTreeMap<_, _> = enodes_map
+				.iter()
+				.map(|(n, enode)| (n, enode.to_string()))
+				.collect();
+			let ips_serialized = serde_json::to_string(&enode_map).unwrap();
+			mining.insert(
+				"hbbft_validator_ip_addresses".into(),
+				Value::String(ips_serialized),
+			);
+		}
+	}
 
 	// Write the Public Key Set
 	let pks_serialized = serde_json::to_string(net_info.public_key_set()).unwrap();
 	mining.insert("hbbft_public_key_set".into(), Value::String(pks_serialized));
 
-	// Write the validator IP Addresses
-	let enode_map: BTreeMap<_, _> = enodes_map
-		.iter()
-		.map(|(n, enode)| (n, enode.to_string()))
-		.collect();
-	let ips_serialized = serde_json::to_string(&enode_map).unwrap();
-	mining.insert(
-		"hbbft_validator_ip_addresses".into(),
-		Value::String(ips_serialized),
-	);
-
 	mining.insert("force_sealing".into(), Value::Boolean(true));
 	mining.insert("min_gas_price".into(), Value::Integer(1000000000));
 	mining.insert("reseal_on_txs".into(), Value::String("none".into()));
 	mining.insert("extra_data".into(), Value::String("Parity".into()));
+	mining.insert("reseal_min_period".into(), Value::Integer(0));
 
 	let mut misc = Map::new();
 	misc.insert(
@@ -201,6 +227,15 @@ where
 	Value::Table(map)
 }
 
+arg_enum! {
+	#[derive(Debug)]
+	enum ConfigType {
+		PosdaoSetup,
+		Docker,
+		Rpc
+	}
+}
+
 fn main() {
 	let matches = App::new("hbbft parity config generator")
 		.version("1.0")
@@ -213,10 +248,8 @@ fn main() {
 				.index(1),
 		)
 		.arg(
-			Arg::with_name("DOCKER")
-				.help("Generate for Docker")
-				.default_value("false")
-				.index(2),
+			Arg::from_usage("<configtype> 'The ConfigType to use'")
+				.possible_values(&ConfigType::variants()),
 		)
 		.get_matches();
 
@@ -228,11 +261,8 @@ fn main() {
 
 	println!("Number of config files to generate: {}", num_nodes);
 
-	let for_docker: bool = matches
-		.value_of("DOCKER")
-		.expect("Should return the default value if not set")
-		.parse()
-		.expect("Input must be of bool type");
+	let config_type =
+		value_t!(matches.value_of("configtype"), ConfigType).unwrap_or(ConfigType::PosdaoSetup);
 
 	let enodes_map = generate_enodes(num_nodes);
 	let mut rng = rand::thread_rng();
@@ -249,14 +279,29 @@ fn main() {
 		//		reserved_peers.push('\n');
 		let i = enode.idx;
 		let file_name = format!("hbbft_validator_{}.toml", i);
-		let toml_string = toml::to_string(&to_toml(info, &enodes_map, i, for_docker))
+		let toml_string = toml::to_string(&to_toml(info, &enodes_map, i, &config_type))
 			.expect("TOML string generation should succeed");
 		fs::write(file_name, toml_string).expect("Unable to write config file");
 
 		let file_name = format!("hbbft_validator_key_{}", i);
 		fs::write(file_name, enode.secret.to_hex()).expect("Unable to write config file");
 	}
-	fs::write("reserved_peers", reserved_peers).expect("Unable to write reserved_peers file");
+	// Write rpc node config
+	let rpc_string = toml::to_string(&to_toml(
+		net_infos
+			.iter()
+			.nth(0)
+			.expect("At least one NetworkInfo entry must exist")
+			.1,
+		&enodes_map,
+		0,
+		&ConfigType::Rpc,
+	))
+	.expect("TOML string generation should succeed");
+	fs::write("rpc_node.toml", rpc_string).expect("Unable to write rpc config file");
+
+	// Write reserved peers file
+	fs::write("reserved-peers", reserved_peers).expect("Unable to write reserved_peers file");
 }
 
 #[cfg(test)]
@@ -297,7 +342,8 @@ mod tests {
 		let enodes_map = generate_enodes(1);
 		let net_infos = NetworkInfo::generate_map(enodes_map.keys().cloned(), &mut rng).unwrap();
 		let net_info = net_infos.iter().nth(0).unwrap().1;
-		let toml_string = toml::to_string(&to_toml(net_info, &enodes_map, 1, false)).unwrap();
+		let toml_string =
+			toml::to_string(&to_toml(net_info, &enodes_map, 1, &ConfigType::PosdaoSetup)).unwrap();
 		let config: TomlHbbftOptions = toml::from_str(&toml_string).unwrap();
 		compare(net_info, &config);
 	}
