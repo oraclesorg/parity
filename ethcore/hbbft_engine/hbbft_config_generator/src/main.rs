@@ -30,6 +30,7 @@ struct Enode {
 	secret: Secret,
 	public: Public,
 	idx: usize,
+	ip: String,
 }
 
 impl ToString for Enode {
@@ -37,15 +38,19 @@ impl ToString for Enode {
 		// Example:
 		// enode://30ccdeb8c31972f570e4eea0673cd08cbe7cefc5de1d70119b39c63b1cba33b48e494e9916c0d1eab7d296774f3573da46025d1accdef2f3690bc9e6659a34b4@192.168.0.101:30300
 		let port = 30300usize + self.idx;
-		format!("enode://{:x}@127.0.0.1:{}", self.public, port)
+		format!("enode://{:x}@{}:{}", self.public, self.ip, port)
 	}
 }
 
-fn generate_enodes(num_nodes: usize) -> BTreeMap<Public, Enode> {
+fn generate_enodes(num_nodes: usize, external_ip: Option<&str>) -> BTreeMap<Public, Enode> {
 	let mut map = BTreeMap::new();
 	for i in 0..num_nodes {
 		// Note: node 0 is a regular full node (not a validator) in the testnet setup, so we start at index 1.
 		let idx = i + 1;
+		let ip = match external_ip {
+			Some(ip) => ip,
+			None => "127.0.0.1"
+		};
 		let (secret, public) = create_account();
 		map.insert(
 			public,
@@ -53,6 +58,7 @@ fn generate_enodes(num_nodes: usize) -> BTreeMap<Public, Enode> {
 				secret,
 				public,
 				idx,
+				ip: ip.into()
 			},
 		);
 	}
@@ -278,7 +284,7 @@ fn main() {
 
 	let external_ip = matches.value_of("extip");
 
-	let enodes_map = generate_enodes(num_nodes);
+	let enodes_map = generate_enodes(num_nodes, external_ip);
 	let mut rng = rand::thread_rng();
 	let net_infos =
 		NetworkInfo::generate_map(enodes_map.keys().cloned().collect::<Vec<_>>(), &mut rng)
@@ -355,7 +361,7 @@ mod tests {
 	#[test]
 	fn test_network_info_serde() {
 		let mut rng = rand::thread_rng();
-		let enodes_map = generate_enodes(1);
+		let enodes_map = generate_enodes(1, None);
 		let net_infos = NetworkInfo::generate_map(enodes_map.keys().cloned(), &mut rng).unwrap();
 		let net_info = net_infos.iter().nth(0).unwrap().1;
 		let toml_string = toml::to_string(&to_toml(
