@@ -104,8 +104,6 @@ where
 
 	let mut network = Map::new();
 	network.insert("port".into(), Value::Integer(base_port + i as i64));
-	network.insert("nat".into(), Value::String("none".into()));
-	network.insert("interface".into(), Value::String("local".into()));
 	match config_type {
 		ConfigType::PosdaoSetup => {
 			network.insert(
@@ -121,9 +119,15 @@ where
 		}
 	}
 
-	if let Some(extip) = external_ip {
-		network.insert("allow_ips".into(), Value::String("public".into()));
-		network.insert("nat".into(), Value::String(format!("extip:{}", extip)));
+	match external_ip {
+		Some(extip) => {
+			network.insert("allow_ips".into(), Value::String("public".into()));
+			network.insert("nat".into(), Value::String(format!("extip:{}", extip)));
+		},
+		None => {
+			network.insert("nat".into(), Value::String("none".into()));
+			network.insert("interface".into(), Value::String("local".into()));
+		}
 	}
 
 	let mut rpc = Map::new();
