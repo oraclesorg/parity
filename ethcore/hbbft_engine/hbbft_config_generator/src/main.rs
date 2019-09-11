@@ -227,6 +227,10 @@ where
 		"logging".into(),
 		Value::String("engine=trace,miner=trace,reward=trace".into()),
 	);
+	misc.insert(
+		"log_file".into(),
+		Value::String("parity.log".into()),
+	);
 
 	let mut map = Map::new();
 	map.insert("parity".into(), Value::Table(parity));
