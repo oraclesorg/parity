@@ -68,6 +68,7 @@ fn to_toml<N>(
 	enodes_map: &BTreeMap<N, Enode>,
 	i: usize,
 	config_type: &ConfigType,
+	external_ip: Option<&str>,
 ) -> Value
 where
 	N: hbbft::NodeIdT + Serialize,
@@ -112,6 +113,11 @@ where
 				Value::String("reserved-peers".into()),
 			);
 		}
+	}
+
+	if let Some(extip) = external_ip {
+		network.insert("allow_ips".into(), Value::String("public".into()));
+		network.insert("nat".into(), Value::String(format!("extip:{}", extip)));
 	}
 
 	let mut rpc = Map::new();
@@ -163,7 +169,7 @@ where
 	let mut mining = Map::new();
 
 	match config_type {
-		ConfigType::Rpc => {},
+		ConfigType::Rpc => {}
 		_ => {
 			// Write Node ID
 			let our_id_serialized = serde_json::to_string(&net_info.our_id()).unwrap();
@@ -249,7 +255,13 @@ fn main() {
 		)
 		.arg(
 			Arg::from_usage("<configtype> 'The ConfigType to use'")
-				.possible_values(&ConfigType::variants()),
+				.possible_values(&ConfigType::variants())
+				.index(2),
+		)
+		.arg(
+			Arg::from_usage("<extip> 'Optional external ip to configure'")
+				.required(false)
+				.index(3),
 		)
 		.get_matches();
 
@@ -263,6 +275,8 @@ fn main() {
 
 	let config_type =
 		value_t!(matches.value_of("configtype"), ConfigType).unwrap_or(ConfigType::PosdaoSetup);
+
+	let external_ip = matches.value_of("extip");
 
 	let enodes_map = generate_enodes(num_nodes);
 	let mut rng = rand::thread_rng();
@@ -279,8 +293,9 @@ fn main() {
 		//		reserved_peers.push('\n');
 		let i = enode.idx;
 		let file_name = format!("hbbft_validator_{}.toml", i);
-		let toml_string = toml::to_string(&to_toml(info, &enodes_map, i, &config_type))
-			.expect("TOML string generation should succeed");
+		let toml_string =
+			toml::to_string(&to_toml(info, &enodes_map, i, &config_type, external_ip))
+				.expect("TOML string generation should succeed");
 		fs::write(file_name, toml_string).expect("Unable to write config file");
 
 		let file_name = format!("hbbft_validator_key_{}", i);
@@ -296,6 +311,7 @@ fn main() {
 		&enodes_map,
 		0,
 		&ConfigType::Rpc,
+		external_ip,
 	))
 	.expect("TOML string generation should succeed");
 	fs::write("rpc_node.toml", rpc_string).expect("Unable to write rpc config file");
@@ -342,8 +358,14 @@ mod tests {
 		let enodes_map = generate_enodes(1);
 		let net_infos = NetworkInfo::generate_map(enodes_map.keys().cloned(), &mut rng).unwrap();
 		let net_info = net_infos.iter().nth(0).unwrap().1;
-		let toml_string =
-			toml::to_string(&to_toml(net_info, &enodes_map, 1, &ConfigType::PosdaoSetup)).unwrap();
+		let toml_string = toml::to_string(&to_toml(
+			net_info,
+			&enodes_map,
+			1,
+			&ConfigType::PosdaoSetup,
+			None,
+		))
+		.unwrap();
 		let config: TomlHbbftOptions = toml::from_str(&toml_string).unwrap();
 		compare(net_info, &config);
 	}
