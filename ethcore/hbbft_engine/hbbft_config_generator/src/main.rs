@@ -190,15 +190,6 @@ where
 			let sks_serialized = serde_json::to_string(&wrapper).unwrap();
 			mining.insert("hbbft_secret_share".into(), Value::String(sks_serialized));
 
-			// Write the Secret Key
-			let wrapper = SerdeSecret(net_info.secret_key());
-			let sk_serialized = serde_json::to_string(&wrapper).unwrap();
-			mining.insert("hbbft_secret_key".into(), Value::String(sk_serialized));
-
-			// Write the Public Keys
-			let pk_serialized = serde_json::to_string(net_info.public_key_map()).unwrap();
-			mining.insert("hbbft_public_keys".into(), Value::String(pk_serialized));
-
 			// Write the validator IP Addresses
 			let enode_map: BTreeMap<_, _> = enodes_map
 				.iter()
@@ -225,7 +216,7 @@ where
 	let mut misc = Map::new();
 	misc.insert(
 		"logging".into(),
-		Value::String("engine=trace,miner=trace,reward=trace".into()),
+		Value::String("engine=trace,miner=trace,reward=trace,consensus=trace,network=trace,sync=trace".into()),
 	);
 	misc.insert(
 		"log_file".into(),
