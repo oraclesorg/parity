@@ -38,7 +38,7 @@ type HbMessage = honey_badger::Message<NodeId>;
 #[derive(Debug, Deserialize, Serialize)]
 enum Message {
 	/// A Honey Badger BFT message.
-	HoneyBadger(HbMessage),
+	HoneyBadger(usize, HbMessage),
 	/// A threshold signature share. The combined signature is used as the block seal.
 	Sealing(BlockNumber, sealing::Message),
 }
@@ -65,6 +65,7 @@ pub struct HoneyBadgerBFT {
 	public_master_key: RwLock<Option<PublicKey>>,
 	sealing: RwLock<BTreeMap<BlockNumber, Sealing>>,
 	options: HoneyBadgerOptions,
+	message_counter: RwLock<usize>,
 }
 
 struct TransitionHandler {
@@ -181,6 +182,7 @@ impl HoneyBadgerBFT {
 			public_master_key: RwLock::new(None),
 			sealing: RwLock::new(BTreeMap::new()),
 			options,
+			message_counter: RwLock::new(0),
 		});
 
 		if !engine.options.is_unit_test.unwrap_or(false) {
@@ -310,9 +312,9 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn process_hb_message(&self, message: HbMessage, sender_id: NodeId) -> Result<(), EngineError> {
+	fn process_hb_message(&self, msg_idx: usize, message: HbMessage, sender_id: NodeId) -> Result<(), EngineError> {
 		let client = self.client_arc().ok_or(EngineError::RequiresClient)?;
-		trace!(target: "consensus", "Received message         {:?} from {}", message, sender_id);
+		trace!(target: "consensus", "Received message of idx {}  {:?} from {}", msg_idx, message, sender_id);
 		self.honey_badger
 			.write()
 			.as_mut()
@@ -370,14 +372,13 @@ impl HoneyBadgerBFT {
 				.expect("Network Info expected to be initialized");
 			match m.target {
 				Target::Nodes(set) => {
-					// for debugging
-					// println!("Sending broadcast message: {:?}", m.message);
-
 					for node_id in set.into_iter().filter(|p| p != net_info.our_id()) {
+						trace!(target: "consensus", "Sending message {:?} to {}", m.message, node_id.0);
 						client.send_consensus_message(ser.clone(), Some(node_id.0));
 					}
 				}
 				Target::AllExcept(set) => {
+					trace!(target: "consensus", "Broadcasting message {:?}", m.message);
 					for node_id in net_info
 						.all_ids()
 						.filter(|p| (p != &net_info.our_id() && !set.contains(p)))
@@ -409,10 +410,17 @@ impl HoneyBadgerBFT {
 	}
 
 	fn process_step(&self, client: Arc<dyn EngineClient>, step: Step<Contribution, NodeId>) {
+		let mut message_counter = self.message_counter.write();
 		let messages = step
 			.messages
 			.into_iter()
-			.map(|msg| msg.map(Message::HoneyBadger));
+			.map(|msg| {
+				*message_counter += 1;
+				TargetedMessage {
+					target: msg.target,
+					message: Message::HoneyBadger(*message_counter, msg.message),
+				}
+			});
 		self.dispatch_messages(&client, messages);
 		self.process_output(client, step.output);
 	}
@@ -592,7 +600,7 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 	fn handle_message(&self, message: &[u8], node_id: Option<H512>) -> Result<(), EngineError> {
 		let node_id = NodeId(node_id.ok_or(EngineError::UnexpectedMessage)?);
 		match serde_json::from_slice(message) {
-			Ok(Message::HoneyBadger(hb_msg)) => self.process_hb_message(hb_msg, node_id),
+			Ok(Message::HoneyBadger(msg_idx, hb_msg)) => self.process_hb_message(msg_idx, hb_msg, node_id),
 			Ok(Message::Sealing(block_num, seal_msg)) => {
 				self.process_sealing_message(seal_msg, node_id, block_num)
 			}
