@@ -372,17 +372,19 @@ impl HoneyBadgerBFT {
 				.expect("Network Info expected to be initialized");
 			match m.target {
 				Target::Nodes(set) => {
+					trace!(target: "consensus", "Dispatching message {:?} to {:?}", m.message, set);
 					for node_id in set.into_iter().filter(|p| p != net_info.our_id()) {
-						trace!(target: "consensus", "Sending message {:?} to {}", m.message, node_id.0);
+						trace!(target: "consensus", "Sending message to {}", node_id.0);
 						client.send_consensus_message(ser.clone(), Some(node_id.0));
 					}
 				}
 				Target::AllExcept(set) => {
-					trace!(target: "consensus", "Broadcasting message {:?}", m.message);
+					trace!(target: "consensus", "Dispatching exclusive message {:?} to all except {:?}", m.message, set);
 					for node_id in net_info
 						.all_ids()
 						.filter(|p| (p != &net_info.our_id() && !set.contains(p)))
 					{
+						trace!(target: "consensus", "Sending exclusive message to {}", node_id.0);
 						client.send_consensus_message(ser.clone(), Some(node_id.0));
 					}
 				}
