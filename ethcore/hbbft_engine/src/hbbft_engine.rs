@@ -99,13 +99,13 @@ impl TransitionHandler {
 				match u64::try_from(next_block_time - now) {
 					Ok(value) => Duration::from_millis(value),
 					_ => {
-						error!(target: "engine", "Could not convert duration to next block to u64");
+						error!(target: "consensus", "Could not convert duration to next block to u64");
 						DEFAULT_DURATION
 					}
 				}
 			}
 		} else {
-			error!(target: "engine", "Latest Block Header could not be obtained!");
+			error!(target: "consensus", "Latest Block Header could not be obtained!");
 			DEFAULT_DURATION
 		}
 	}
@@ -118,7 +118,7 @@ impl IoHandler<()> for TransitionHandler {
 	fn initialize(&self, io: &IoContext<()>) {
 		// Start the event loop with an arbitrary timer
 		io.register_timer_once(ENGINE_TIMEOUT_TOKEN, DEFAULT_DURATION)
-			.unwrap_or_else(|e| warn!(target: "engine", "Failed to start consensus timer: {}.", e))
+			.unwrap_or_else(|e| warn!(target: "consensus", "Failed to start consensus timer: {}.", e))
 	}
 
 	fn timeout(&self, io: &IoContext<()>, timer: TimerToken) {
@@ -157,7 +157,7 @@ impl IoHandler<()> for TransitionHandler {
 
 			io.register_timer_once(ENGINE_TIMEOUT_TOKEN, timer_duration)
 				.unwrap_or_else(
-					|e| warn!(target: "engine", "Failed to restart consensus step timer: {}.", e),
+					|e| warn!(target: "consensus", "Failed to restart consensus step timer: {}.", e),
 				);
 		}
 	}
@@ -325,7 +325,7 @@ impl HoneyBadgerBFT {
 					self.join_hbbft_epoch(honey_badger);
 				} else {
 					// TODO: Report consensus step errors
-					error!(target: "engine", "Error on HoneyBadger consensus step");
+					error!(target: "consensus", "Error on HoneyBadger consensus step");
 				}
 			})
 			.ok_or(EngineError::InvalidEngine)
@@ -345,7 +345,7 @@ impl HoneyBadgerBFT {
 			}
 		}
 
-		trace!(target: "engine", "Received signature share for block {} from {}", block_num, sender_id);
+		trace!(target: "consensus", "Received signature share for block {} from {}", block_num, sender_id);
 		let step_result = self
 			.sealing
 			.write()
@@ -354,7 +354,7 @@ impl HoneyBadgerBFT {
 			.handle_message(&sender_id, message);
 		match step_result {
 			Ok(step) => self.process_seal_step(client, step, block_num),
-			Err(err) => error!(target: "engine", "Error on ThresholdSign step: {:?}", err), // TODO: Errors
+			Err(err) => error!(target: "consensus", "Error on ThresholdSign step: {:?}", err), // TODO: Errors
 		}
 		Ok(())
 	}
@@ -402,7 +402,7 @@ impl HoneyBadgerBFT {
 			.map(|msg| msg.map(|m| Message::Sealing(block_num, m)));
 		self.dispatch_messages(&client, messages);
 		if let Some(sig) = step.output.into_iter().next() {
-			trace!(target: "engine", "Signature for block {} is ready", block_num);
+			trace!(target: "consensus", "Signature for block {} is ready", block_num);
 			let state = Sealing::Complete(sig);
 			self.sealing.write().insert(block_num, state);
 			client.update_sealing();
@@ -443,7 +443,7 @@ impl HoneyBadgerBFT {
 			}
 			_ => {
 				// TODO: Report consensus step errors
-				error!(target: "engine", "Error on HoneyBadger consensus step.");
+				error!(target: "consensus", "Error on HoneyBadger consensus step.");
 			}
 		}
 	}
@@ -480,7 +480,7 @@ impl HoneyBadgerBFT {
 		if let Some(parent_block_number) = client.block_number(BlockId::Latest) {
 			honey_badger.skip_to_epoch(parent_block_number + 1);
 		} else {
-			error!(target: "engine", "The current chain latest block number could not be obtained.");
+			error!(target: "consensus", "The current chain latest block number could not be obtained.");
 		}
 	}
 
@@ -632,10 +632,10 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 			.expect("Missing public master key")
 			.verify(sig, block.header.bare_hash())
 		{
-			error!(target: "engine", "Threshold signature does not match new block.");
+			error!(target: "consensus", "Threshold signature does not match new block.");
 			return Seal::None;
 		}
-		trace!(target: "engine", "Returning seal for block {}.", block_num);
+		trace!(target: "consensus", "Returning seal for block {}.", block_num);
 		Seal::Regular(vec![rlp::encode(&RlpSig(sig))])
 	}
 
