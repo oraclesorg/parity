@@ -16,8 +16,9 @@
 
 use std::cmp;
 use std::collections::{HashSet, BTreeMap, VecDeque};
+use std::convert::TryFrom;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicI64, AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Weak};
 use std::time::{Instant, Duration};
 
@@ -2850,12 +2851,13 @@ mod tests {
 
 /// Queue some items to be processed by IO client.
 struct IoChannelQueue {
-	currently_queued: Arc<AtomicUsize>,
-	limit: usize,
+	currently_queued: Arc<AtomicI64>,
+	limit: i64,
 }
 
 impl IoChannelQueue {
 	pub fn new(limit: usize) -> Self {
+		let limit = i64::try_from(limit).unwrap_or(i64::max_value());
 		IoChannelQueue {
 			currently_queued: Default::default(),
 			limit,
@@ -2866,20 +2868,20 @@ impl IoChannelQueue {
 		F: Fn(&Client) + Send + Sync + 'static,
 	{
 		let queue_size = self.currently_queued.load(AtomicOrdering::Relaxed);
-		ensure!(queue_size < self.limit, QueueErrorKind::Full(self.limit));
+		if queue_size >= self.limit {
+			let err_limit = usize::try_from(self.limit).unwrap_or(usize::max_value());
+			return Err(QueueErrorKind::Full(err_limit).into());
+		};
+
+		let count = i64::try_from(count).unwrap_or(i64::max_value());
 
 		let currently_queued = self.currently_queued.clone();
-		let result = channel.send(ClientIoMessage::execute(move |client| {
+		let _ok = channel.send(ClientIoMessage::execute(move |client| {
 			currently_queued.fetch_sub(count, AtomicOrdering::SeqCst);
 			fun(client);
-		}));
+		}))?;
 
-		match result {
-			Ok(_) => {
-				self.currently_queued.fetch_add(count, AtomicOrdering::SeqCst);
-				Ok(())
-			},
-			Err(e) => bail!(QueueErrorKind::Channel(e)),
-		}
+		self.currently_queued.fetch_add(count, AtomicOrdering::SeqCst);
+		Ok(())
 	}
 }
