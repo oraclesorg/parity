@@ -185,8 +185,7 @@ impl HoneyBadgerBFT {
 		Ok(engine)
 	}
 
-	fn new_network_info(options: HbbftOptions) -> Option<NetworkInfo<NodeId>> {
-		let our_id: NodeId = serde_json::from_str(&options.hbbft_our_id).ok()?;
+	fn new_network_info(options: HbbftOptions, our_id: NodeId) -> Option<NetworkInfo<NodeId>> {
 		let secret_key_share_wrap: SerdeSecret<SecretKeyShare> =
 			serde_json::from_str(&options.hbbft_secret_share).ok()?;
 		let secret_key_share = secret_key_share_wrap.into_inner();
@@ -197,16 +196,44 @@ impl HoneyBadgerBFT {
 		Some(NetworkInfo::new(our_id, secret_key_share, pks, ips.keys()))
 	}
 
-	fn new_honey_badger(&self, options: HbbftOptions) -> Option<HoneyBadger> {
+	fn new_honey_badger(&self, options: HbbftOptions, our_id: NodeId) -> Option<HoneyBadger> {
 		// TODO: Retrieve the information to build a node-specific NetworkInfo
 		//       struct from the chain spec and from contracts.
-		if let Some(net_info) = HoneyBadgerBFT::new_network_info(options) {
+		if let Some(net_info) = HoneyBadgerBFT::new_network_info(options, our_id) {
 			let mut builder: HoneyBadgerBuilder<Contribution, _> =
 				HoneyBadger::builder(Arc::new(net_info.clone()));
 			*self.network_info.write() = Some(net_info);
 			return Some(builder.build());
 		} else {
 			return None;
+		}
+	}
+
+	fn try_init_honey_badger(&self) {
+		let options = if let Some(client) = self.client_arc() {
+			// TODO: Retrieve the information to build a node-specific NetworkInfo
+			//       struct from the chain spec and from contracts.
+			client.hbbft_options().expect("hbbft options have to exist")
+		} else {
+			return; // No client set yet.
+		};
+		let pks: PublicKeySet = match serde_json::from_str(&options.hbbft_public_key_set) {
+			Ok(pks) => pks,
+			Err(err) => {
+				error!(target: "engine", "Failed to read public master key from options: {:?}", err);
+				return;
+			}
+		};
+		let our_id = if let Some(signer) = self.signer.read().as_ref() {
+			NodeId(signer.public().unwrap()) // Can this be `None`?
+		} else {
+			return; // No engine signer set.
+		};
+		*self.public_master_key.write() = Some(pks.public_key());
+		if let Some(honey_badger) = self.new_honey_badger(options, our_id) {
+			*self.honey_badger.write() = Some(honey_badger);
+		} else {
+			info!(target: "engine", "HoneyBadger algorithm could not be created - running as regular node");
 		}
 	}
 
@@ -509,29 +536,12 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 
 	fn register_client(&self, client: Weak<dyn EngineClient>) {
 		*self.client.write() = Some(client.clone());
-		if let Some(client) = self.client_arc() {
-			// TODO: Retrieve the information to build a node-specific NetworkInfo
-			//       struct from the chain spec and from contracts.
-			let options = client.hbbft_options().expect("hbbft options have to exist");
-			let pks: PublicKeySet = match serde_json::from_str(&options.hbbft_public_key_set) {
-				Ok(pks) => pks,
-				Err(err) => {
-					error!(target: "engine", "Failed to read public master key from options: {:?}",
-					       err);
-					return;
-				}
-			};
-			*self.public_master_key.write() = Some(pks.public_key());
-			if let Some(honey_badger) = self.new_honey_badger(options) {
-				*self.honey_badger.write() = Some(honey_badger);
-			} else {
-				info!(target: "engine", "HoneyBadger algorithm could not be created - running as regular node");
-			}
-		}
+		self.try_init_honey_badger();
 	}
 
 	fn set_signer(&self, signer: Box<dyn EngineSigner>) {
 		*self.signer.write() = Some(signer);
+		self.try_init_honey_badger();
 	}
 
 	fn clear_signer(&self) {

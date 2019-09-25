@@ -6,8 +6,7 @@ use ethcore::spec::Spec;
 use ethcore::test_helpers::generate_dummy_client_with_spec;
 use ethcore::test_helpers::TestNotify;
 use ethereum_types::U256;
-use ethkey::{Generator, Public, Random};
-use hash::keccak;
+use ethkey::{Generator, KeyPair, Public, Random};
 use hbbft::crypto::serde_impl::SerdeSecret;
 use hbbft::NetworkInfo;
 use rustc_hex::FromHex;
@@ -37,8 +36,6 @@ fn serialize_netinfo(
 	net_info: NetworkInfo<Public>,
 	ips_map: &BTreeMap<Public, String>,
 ) -> HbbftOptions {
-	let hbbft_our_id = serde_json::to_string(&net_info.our_id()).unwrap();
-
 	let wrapper = SerdeSecret(net_info.secret_key_share().unwrap());
 	let hbbft_secret_share = serde_json::to_string(&wrapper).unwrap();
 
@@ -47,7 +44,6 @@ fn serialize_netinfo(
 	let hbbft_validator_ip_addresses = serde_json::to_string(ips_map).unwrap();
 
 	HbbftOptions {
-		hbbft_our_id,
 		hbbft_secret_share,
 		hbbft_public_key_set,
 		hbbft_validator_ip_addresses,
@@ -55,9 +51,11 @@ fn serialize_netinfo(
 }
 
 pub fn hbbft_client_setup(
+	keypair: KeyPair,
 	net_info: NetworkInfo<Public>,
 	ips_map: &BTreeMap<Public, String>,
 ) -> HbbftTestData {
+	assert_eq!(keypair.public(), net_info.our_id());
 	let client = hbbft_client();
 
 	// Get miner reference
@@ -66,9 +64,7 @@ pub fn hbbft_client_setup(
 
 	let engine = client.engine();
 	// Set the signer *before* registering the client with the engine.
-	let signer = from_keypair(
-		ethkey::KeyPair::from_secret(keccak("1").into()).expect("KeyPair generation must succeed"),
-	);
+	let signer = from_keypair(keypair);
 	engine.set_signer(signer);
 	engine.register_client(Arc::downgrade(&client) as _);
 
@@ -77,7 +73,7 @@ pub fn hbbft_client_setup(
 	client.add_notify(notify.clone());
 
 	HbbftTestData {
-		client: client.clone(),
+		client,
 		notify,
 		miner,
 	}

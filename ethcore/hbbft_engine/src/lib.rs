@@ -65,7 +65,8 @@ mod tests {
 	use crate::test_helpers::{hbbft_client_setup, inject_transaction, HbbftTestData};
 	use ethcore::client::{BlockId, BlockInfo};
 	use ethereum_types::H256;
-	use ethkey::{Generator, Public, Random};
+	use ethkey::{KeyPair, Public};
+	use hash::keccak;
 	use hbbft::NetworkInfo;
 	use hbbft_testing::proptest::{gen_seed, TestRng, TestRngSeed};
 	use proptest::{prelude::ProptestConfig, proptest};
@@ -102,21 +103,24 @@ mod tests {
 		}
 	}
 
-	fn generate_ip_addresses<'a, I>(ids: I) -> BTreeMap<Public, String>
-	where
-		I: IntoIterator<Item = &'a Public>,
-	{
-		ids.into_iter().map(|id| (*id, format!("{}", id))).collect()
-	}
-
-	fn generate_ids(num_ids: usize) -> Vec<Public> {
-		(0..num_ids)
+	fn generate_nodes<R: Rng>(size: usize, rng: &mut R) -> BTreeMap<Public, HbbftTestData> {
+		let keypairs: Vec<KeyPair> = (1..=size)
+			.map(|i| {
+				let secret = keccak(i.to_string());
+				KeyPair::from_secret(secret.into()).expect("KeyPair generation must succeed")
+			})
+			.collect();
+		let ips_map: BTreeMap<Public, String> = keypairs
+			.iter()
+			.map(|kp| (*kp.public(), format!("{}", kp.public())))
+			.collect();
+		let net_infos = NetworkInfo::generate_map(ips_map.keys().cloned(), rng)
+			.expect("NetworkInfo generation to always succeed");
+		keypairs
 			.into_iter()
-			.map(|_| {
-				*Random
-					.generate()
-					.expect("H512 has generation capabilities")
-					.public()
+			.map(|kp| {
+				let netinfo = net_infos[kp.public()].clone();
+				(*kp.public(), hbbft_client_setup(kp, netinfo, &ips_map))
 			})
 			.collect()
 	}
@@ -130,18 +134,11 @@ mod tests {
 		super::init();
 
 		let mut rng = TestRng::from_seed(seed);
-		let ids = generate_ids(1);
-		let ips_map = generate_ip_addresses(&ids);
-		let net_infos = NetworkInfo::generate_map(ids, &mut rng)
-			.expect("NetworkInfo generation is expected to always succeed");
-
-		let net_info = net_infos
-			.iter()
+		let test_data = generate_nodes(1, &mut rng)
+			.into_iter()
 			.nth(0)
 			.expect("A NetworkInfo must exist for node 0")
 			.1;
-
-		let test_data = hbbft_client_setup(net_info.clone(), &ips_map);
 
 		// Verify that we actually start at block 0.
 		assert_eq!(test_data.client.chain().best_block_number(), 0);
@@ -182,14 +179,7 @@ mod tests {
 	}
 
 	fn test_with_size<R: Rng>(rng: &mut R, size: usize) {
-		let ids = generate_ids(size);
-		let ips_map = generate_ip_addresses(&ids);
-		let net_infos =
-			NetworkInfo::generate_map(ids, rng).expect("NetworkInfo generation to always succeed");
-		let nodes: BTreeMap<_, _> = net_infos
-			.into_iter()
-			.map(|(n, netinfo)| (n, hbbft_client_setup(netinfo, &ips_map)))
-			.collect();
+		let nodes = generate_nodes(size, rng);
 
 		for (_, n) in &nodes {
 			// Verify that we actually start at block 0.
@@ -240,15 +230,7 @@ mod tests {
 		// Other nodes should *not* join the epoch if they receive only
 		// one contribution, but if 2 or more are received they should!
 		let network_size: usize = 4;
-		let ids = generate_ids(network_size);
-		let ips_map = generate_ip_addresses(&ids);
-		let net_infos = NetworkInfo::generate_map(ids, &mut rng)
-			.expect("NetworkInfo generation is expected to always succeed");
-
-		let nodes: BTreeMap<_, _> = net_infos
-			.into_iter()
-			.map(|(n, netinfo)| (n, hbbft_client_setup(netinfo, &ips_map)))
-			.collect();
+		let nodes = generate_nodes(network_size, &mut rng);
 
 		// Get the first node and send a transaction to it.
 		let first_node = &nodes.iter().nth(0).unwrap().1;

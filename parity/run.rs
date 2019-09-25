@@ -505,7 +505,6 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 
 	// Temporary, until the hbbft options are being read from contracts
 	miner.set_hbbft_options(HbbftOptions {
-		hbbft_our_id: cmd.miner_extras.hbbft_our_id.unwrap_or("".into()),
 		hbbft_secret_share: cmd.miner_extras.hbbft_secret_key_share.unwrap_or("".into()),
 		hbbft_public_key_set: cmd.miner_extras.hbbft_public_key_set.unwrap_or("".into()),
 		hbbft_validator_ip_addresses: cmd.miner_extras.hbbft_validator_ip_addresses.unwrap_or("".into()),
