@@ -55,8 +55,6 @@ use state::StateInfo;
 /// TODO: Remove once contracts supply the necessary data.
 #[derive(Deserialize, Default, Clone)]
 pub struct HbbftOptions {
-	/// The node id of this validator
-	pub hbbft_our_id: String,
 	/// Threshold Cryptography secret share.
 	pub hbbft_secret_share: String,
 	/// Threshold Cryptography public key shares.
