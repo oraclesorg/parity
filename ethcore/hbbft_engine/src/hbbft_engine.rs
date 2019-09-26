@@ -21,6 +21,7 @@ use parking_lot::RwLock;
 use rlp::{self, Decodable, Rlp};
 use serde::Deserialize;
 use serde_json;
+use std::cmp::{max, min};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::sync::{Arc, Weak};
@@ -118,7 +119,9 @@ impl IoHandler<()> for TransitionHandler {
 	fn initialize(&self, io: &IoContext<()>) {
 		// Start the event loop with an arbitrary timer
 		io.register_timer_once(ENGINE_TIMEOUT_TOKEN, DEFAULT_DURATION)
-			.unwrap_or_else(|e| warn!(target: "consensus", "Failed to start consensus timer: {}.", e))
+			.unwrap_or_else(
+				|e| warn!(target: "consensus", "Failed to start consensus timer: {}.", e),
+			)
 	}
 
 	fn timeout(&self, io: &IoContext<()>, timer: TimerToken) {
@@ -142,16 +145,11 @@ impl IoHandler<()> for TransitionHandler {
 				if let Some(c) = weak.upgrade() {
 					timer_duration = self.duration_remaining_since_last_block(c);
 					// The duration should be at least 1ms and at most self.engine.options.minimum_block_time
-					// clamp() is still an unstable feature:
-					// timer_duration.clamp(Duration::from_millis(1), Duration::from_secs(self.engine.options.minimum_block_time));
-					if timer_duration < Duration::from_millis(1) {
-						timer_duration = Duration::from_millis(1);
-					}
-					if timer_duration > Duration::from_secs(self.engine.options.minimum_block_time)
-					{
-						timer_duration =
-							Duration::from_secs(self.engine.options.minimum_block_time);
-					}
+					timer_duration = max(timer_duration, Duration::from_millis(1));
+					timer_duration = min(
+						timer_duration,
+						Duration::from_secs(self.engine.options.minimum_block_time),
+					);
 				}
 			}
 
@@ -238,12 +236,12 @@ impl HoneyBadgerBFT {
 				return;
 			}
 		};
+		*self.public_master_key.write() = Some(pks.public_key());
 		let our_id = if let Some(signer) = self.signer.read().as_ref() {
 			NodeId(signer.public().unwrap()) // Can this be `None`?
 		} else {
 			return; // No engine signer set.
 		};
-		*self.public_master_key.write() = Some(pks.public_key());
 		if let Some(honey_badger) = self.new_honey_badger(options, our_id) {
 			*self.honey_badger.write() = Some(honey_badger);
 		} else {
@@ -258,9 +256,7 @@ impl HoneyBadgerBFT {
 			error!(target: "consensus", "UNHANDLED EPOCH OUTPUTS!");
 		}
 		let batch = match output.first() {
-			None => {
-				return
-			},
+			None => return,
 			Some(batch) => batch,
 		};
 
@@ -312,7 +308,12 @@ impl HoneyBadgerBFT {
 		}
 	}
 
-	fn process_hb_message(&self, msg_idx: usize, message: HbMessage, sender_id: NodeId) -> Result<(), EngineError> {
+	fn process_hb_message(
+		&self,
+		msg_idx: usize,
+		message: HbMessage,
+		sender_id: NodeId,
+	) -> Result<(), EngineError> {
 		let client = self.client_arc().ok_or(EngineError::RequiresClient)?;
 		trace!(target: "consensus", "Received message of idx {}  {:?} from {}", msg_idx, message, sender_id);
 		self.honey_badger
@@ -413,16 +414,13 @@ impl HoneyBadgerBFT {
 
 	fn process_step(&self, client: Arc<dyn EngineClient>, step: Step<Contribution, NodeId>) {
 		let mut message_counter = self.message_counter.write();
-		let messages = step
-			.messages
-			.into_iter()
-			.map(|msg| {
-				*message_counter += 1;
-				TargetedMessage {
-					target: msg.target,
-					message: Message::HoneyBadger(*message_counter, msg.message),
-				}
-			});
+		let messages = step.messages.into_iter().map(|msg| {
+			*message_counter += 1;
+			TargetedMessage {
+				target: msg.target,
+				message: Message::HoneyBadger(*message_counter, msg.message),
+			}
+		});
 		self.dispatch_messages(&client, messages);
 		self.process_output(client, step.output);
 	}
@@ -602,7 +600,9 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 	fn handle_message(&self, message: &[u8], node_id: Option<H512>) -> Result<(), EngineError> {
 		let node_id = NodeId(node_id.ok_or(EngineError::UnexpectedMessage)?);
 		match serde_json::from_slice(message) {
-			Ok(Message::HoneyBadger(msg_idx, hb_msg)) => self.process_hb_message(msg_idx, hb_msg, node_id),
+			Ok(Message::HoneyBadger(msg_idx, hb_msg)) => {
+				self.process_hb_message(msg_idx, hb_msg, node_id)
+			}
 			Ok(Message::Sealing(block_num, seal_msg)) => {
 				self.process_sealing_message(seal_msg, node_id, block_num)
 			}
