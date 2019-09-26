@@ -2869,11 +2869,11 @@ impl IoChannelQueue {
 	{
 		let queue_size = self.currently_queued.load(AtomicOrdering::Relaxed);
 		if queue_size >= self.limit {
-			let err_limit = usize::try_from(self.limit).unwrap_or(usize::max_value());
+			let err_limit = usize::try_from(self.limit).ok().unwrap_or_else(usize::max_value);
 			return Err(QueueErrorKind::Full(err_limit).into());
 		};
 
-		let count = i64::try_from(count).unwrap_or(i64::max_value());
+		let count = i64::try_from(count).ok().unwrap_or_else(i64::max_value);
 
 		let currently_queued = self.currently_queued.clone();
 		let _ok = channel.send(ClientIoMessage::execute(move |client| {
