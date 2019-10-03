@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use ansi_term::Colour;
 use bytes::Bytes;
 use bytes::ToPretty;
-use ethereum_types::{Address, H256, H264, U256};
+use ethereum_types::{Address, H256, H264, H512, U256};
 use hash::keccak;
 use hash_db::EMPTY_PREFIX;
 use itertools::Itertools;
@@ -69,6 +69,7 @@ use client_traits::{
 	ChainInfo,
 	ChainNotify,
 	DatabaseRestore,
+	HbbftOptions,
 	ImportBlock,
 	ImportExportBlocks,
 	IoClient,
@@ -2256,9 +2257,9 @@ impl IoClient for Client {
 		Ok(hash)
 	}
 
-	fn queue_consensus_message(&self, message: Bytes) {
+	fn queue_consensus_message(&self, message: Bytes, node_id: Option<H512>) {
 		match self.queue_consensus_message.queue(&self.io_channel.read(), 1, move |client| {
-			if let Err(e) = client.engine().handle_message(&message) {
+			if let Err(e) = client.engine().handle_message(&message, node_id) {
 				debug!(target: "poa", "Invalid message received: {}", e);
 			}
 		}) {
@@ -2468,6 +2469,10 @@ impl client_traits::EngineClient for Client {
 		self.notify(|notify| notify.broadcast(ChainMessageType::Consensus(message.clone())));
 	}
 
+	fn send_consensus_message(&self, message: Bytes, node_id: Option<H512>) {
+		self.notify(|notify| notify.send(ChainMessageType::Consensus(message.clone()), node_id));
+	}
+
 	fn epoch_transition_for(&self, parent_hash: H256) -> Option<EpochTransition> {
 		self.chain.read().epoch_transition_for(parent_hash)
 	}
@@ -2480,6 +2485,21 @@ impl client_traits::EngineClient for Client {
 
 	fn block_header(&self, id: BlockId) -> Option<encoded::Header> {
 		BlockChainClient::block_header(self, id)
+	}
+
+	fn queued_transactions(&self) -> Vec<Arc<VerifiedTransaction>> {
+		self.importer.miner.queued_transactions()
+	}
+
+	fn create_pending_block_at(&self, txns: Vec<SignedTransaction>, timestamp: u64, block_number: u64) -> Option<Header> {
+		self.importer.miner.create_pending_block_at(self, txns, timestamp, block_number)
+	}
+
+	/// Returns the currently configured options for the hbbft consensus engine.
+	/// TODO: Should be removed as soon as all information required to build this struct
+	///       can be obtained through the chain spec or contracts.
+	fn hbbft_options(&self) -> Option<HbbftOptions> {
+		Some(self.importer.miner.hbbft_options())
 	}
 }
 

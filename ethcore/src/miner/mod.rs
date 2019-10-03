@@ -34,6 +34,7 @@ use std::sync::Arc;
 use std::collections::{BTreeSet, BTreeMap};
 
 use bytes::Bytes;
+use client_traits::HbbftOptions;
 use ethcore_miner::pool::{VerifiedTransaction, QueueStatus, local_transactions};
 use ethereum_types::{H256, U256, Address};
 use types::transaction::{self, UnverifiedTransaction, SignedTransaction, PendingTransaction};
@@ -128,6 +129,14 @@ pub trait MinerService : Send + Sync {
 
 	/// Set the extra_data that we will seal blocks with.
 	fn set_extra_data(&self, extra_data: Bytes);
+
+	/// Temporary: This data will be supplied by contracts instead.
+	/// TODO: Remove once contracts supply the necessary data.
+	fn set_hbbft_options(&self, _options: HbbftOptions) {}
+
+	/// Temporary: This data will be supplied by contracts instead.
+	/// TODO: Remove once contracts supply the necessary data.
+	fn hbbft_options(&self) -> HbbftOptions { unimplemented!() }
 
 	/// Set info necessary to sign consensus messages and block authoring.
 	///

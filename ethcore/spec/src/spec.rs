@@ -42,6 +42,7 @@ use engine::Engine;
 use ethash_engine::Ethash;
 use ethereum_types::{H256, Bloom, U256, Address};
 use ethjson;
+use hbbft_engine::HoneyBadgerBFT;
 use instant_seal::{InstantSeal, InstantSealParams};
 use keccak_hash::{KECCAK_NULL_RLP, keccak};
 use log::{trace, warn};
@@ -348,6 +349,8 @@ impl Spec {
 			ethjson::spec::Engine::Clique(clique) => Clique::new(clique.params.into(), machine)
 								.expect("Failed to start Clique consensus engine."),
 			ethjson::spec::Engine::AuthorityRound(authority_round) => AuthorityRound::new(authority_round.params.into(), machine)
+				.expect("Failed to start AuthorityRound consensus engine."),
+			ethjson::spec::Engine::Hbbft(hbbft) => HoneyBadgerBFT::new(hbbft.params.into(), machine)
 				.expect("Failed to start AuthorityRound consensus engine."),
 		}
 	}

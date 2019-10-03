@@ -32,11 +32,11 @@ use common_types::{
 	},
 	errors::{EthcoreError as Error, EngineError},
 	snapshot::Snapshotting,
-	transaction::{self, UnverifiedTransaction},
+	transaction::{self, SignedTransaction, UnverifiedTransaction},
 };
 use client_traits::EngineClient;
 
-use ethereum_types::{H256, U256, Address};
+use ethereum_types::{H256, H512, U256, Address};
 use ethkey::Signature;
 use machine::{
 	Machine,
@@ -157,11 +157,17 @@ pub trait Engine: Sync + Send {
 	/// Additional engine-specific information for the user/developer concerning `header`.
 	fn extra_info(&self, _header: &Header) -> BTreeMap<String, String> { BTreeMap::new() }
 
+	/// Whether the miner should prepare blocks for sealing for this engine.
+	fn should_miner_prepare_blocks(&self) -> bool { true }
+
 	/// Maximum number of uncles a block is allowed to declare.
 	fn maximum_uncle_count(&self, _block: BlockNumber) -> usize { 0 }
 
 	/// Optional maximum gas limit.
 	fn maximum_gas_limit(&self) -> Option<U256> { None }
+
+	/// New transactions were imported to the transaction queue
+	fn on_transactions_imported(&self) {}
 
 	/// Block transformation functions, before the transactions.
 	/// `epoch_begin` set to true if this block kicks off an epoch.
@@ -184,6 +190,12 @@ pub trait Engine: Sync + Send {
 
 	/// Allow mutating the header during seal generation. Currently only used by Clique.
 	fn on_seal_block(&self, _block: &mut ExecutedBlock) -> Result<(), Error> { Ok(()) }
+
+	/// Returns a list of transactions for a new block if we are the author.
+	///
+	/// This is called when the miner prepares a new block that this node will author and seal. It returns a list of
+	/// transactions that will be added to the block before any other transactions from the queue.
+	fn on_prepare_block(&self, _block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> { Ok(Vec::new()) }
 
 	/// Returns the engine's current sealing state.
 	fn sealing_state(&self) -> SealingState { SealingState::External }
@@ -290,7 +302,7 @@ pub trait Engine: Sync + Send {
 
 	/// Handle any potential consensus messages;
 	/// updating consensus state and potentially issuing a new one.
-	fn handle_message(&self, _message: &[u8]) -> Result<(), EngineError> { Err(EngineError::UnexpectedMessage) }
+	fn handle_message(&self, _message: &[u8], _node_id: Option<H512>) -> Result<(), EngineError> { Err(EngineError::UnexpectedMessage) }
 
 	/// Register a component which signs consensus messages.
 	fn set_signer(&self, _signer: Box<dyn EngineSigner>) {}

@@ -1,7 +1,7 @@
+use common_types::transaction::SignedTransaction;
 use rand::{self, distributions::Standard, Rng};
 use rlp::Encodable;
 use std::time::UNIX_EPOCH;
-use types::transaction::SignedTransaction;
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Serialize, Deserialize)]
 pub(super) struct Contribution {
@@ -51,8 +51,8 @@ impl Contribution {
 #[cfg(test)]
 mod tests {
 	use crate::test_helpers::create_transaction;
+	use common_types::transaction::SignedTransaction;
 	use rlp::{Decodable, Rlp};
-	use types::transaction::SignedTransaction;
 
 	#[test]
 	fn test_contribution_serialization() {

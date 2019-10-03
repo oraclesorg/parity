@@ -1,6 +1,6 @@
 [package]
 description = "hbbft consensus protocol Engine"
-name = "hbbft"
+name = "hbbft_engine"
 version = "0.0.1"
 license = "GPL-3.0"
 authors = [
@@ -11,21 +11,24 @@ authors = [
 [lib]
 
 [dependencies]
+client-traits = { path = "../../client-traits" }
 common-types = { path = "../../types" }
+engine = { path = "../../engine" }
 ethcore-io = { path = "../../../util/io" }
 ethcore-miner = { path = "../../../miner" }
-ethereum-types = "0.4"
+ethereum-types = "0.6.0"
+ethjson = { path = "../../../json" }
 ethkey = { path = "../../../accounts/ethkey" }
 hbbft = { git = "https://github.com/poanetwork/hbbft", rev = "fe17fc9850f2f1078a6f99463e46c7f581d58764" }
 hbbft_testing = { git = "https://github.com/poanetwork/hbbft" }
 hex_fmt = "0.3.0"
-inventory = "0.1"
 itertools = "0.5"
 keccak-hash = "0.1"
 log = "0.4"
+machine = { path = "../../machine" }
 parking_lot = "0.6"
 rand = "0.6.5"
-rlp = { version = "0.3.0", features = ["ethereum"] }
+rlp = "0.4.0"
 rustc-hex = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -34,6 +37,7 @@ serde_json = "1.0"
 ethcore = { path = "../..", features = ["test-helpers"] }
 ethcore-accounts = { path = "../../../accounts" }
 proptest = "0.9.2"
+spec = { path = "../../spec" }
 toml = "0.5.1"
 
 [features]

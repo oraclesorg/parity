@@ -18,12 +18,13 @@
 
 use std::sync::{Weak, Arc};
 
+use client_traits::HbbftOptions;
 use engine::{Engine, EpochChange, Proof};
 use verification::queue::{self, HeaderQueue};
 use spec::{Spec, SpecHardcodedSync};
 use io::IoChannel;
 use parking_lot::{Mutex, RwLock};
-use ethereum_types::{H256, U256};
+use ethereum_types::{H256, H512, U256};
 use futures::{IntoFuture, Future};
 use common_types::{
 	BlockNumber,
@@ -37,9 +38,11 @@ use common_types::{
 	header::Header,
 	ids::BlockId,
 	io_message::ClientIoMessage,
+	transaction::SignedTransaction,
 	verification::VerificationQueueInfo as BlockQueueInfo,
 };
 use kvdb::KeyValueDB;
+use miner::pool::VerifiedTransaction;
 use vm::EnvInfo;
 
 use self::fetch::ChainDataFetcher;
@@ -629,6 +632,7 @@ impl<T: ChainDataFetcher> client_traits::EngineClient for Client<T> {
 	fn update_sealing(&self) { }
 	fn submit_seal(&self, _block_hash: H256, _seal: Vec<Vec<u8>>) { }
 	fn broadcast_consensus_message(&self, _message: Vec<u8>) { }
+	fn send_consensus_message(&self, _message: Vec<u8>, _node_id: Option<H512>) { }
 
 	fn epoch_transition_for(&self, parent_hash: H256) -> Option<EpochTransition> {
 		self.chain.epoch_transition_for(parent_hash).map(|(hdr, proof)| EpochTransition {
@@ -648,6 +652,26 @@ impl<T: ChainDataFetcher> client_traits::EngineClient for Client<T> {
 
 	fn block_header(&self, id: BlockId) -> Option<encoded::Header> {
 		Client::block_header(self, id)
+	}
+
+	fn queued_transactions(&self) -> Vec<Arc<VerifiedTransaction>> {
+		warn!(target: "client", "No miner available in light clients.");
+		Vec::new()
+	}
+
+	fn create_pending_block_at(&self, _txns: Vec<SignedTransaction>, _timestamp: u64, _block_number: u64)
+		-> Option<Header>
+	{
+		warn!(target: "client", "No miner available in light clients.");
+		None
+	}
+
+	/// Returns the currently configured options for the hbbft consensus engine.
+	/// TODO: Should be removed as soon as all information required to build this struct
+	///       can be obtained through the chain spec or contracts.
+	fn hbbft_options(&self) -> Option<HbbftOptions> {
+		warn!(target: "client", "No miner available in light clients.");
+		None
 	}
 }
 

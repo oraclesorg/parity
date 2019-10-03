@@ -43,7 +43,18 @@ impl EngineSigner for (Arc<AccountProvider>, Address, Password) {
 		}
 	}
 
+	fn decrypt(&self, auth_data: &[u8], cipher: &[u8]) -> Result<Vec<u8>, ethkey::crypto::Error> {
+		self.0.decrypt(self.1, None, auth_data, cipher).map_err(|e| {
+			warn!("Unable to decrypt message: {:?}", e);
+			ethkey::crypto::Error::InvalidMessage
+		})
+	}
+
 	fn address(&self) -> Address {
 		self.1
+	}
+
+	fn public(&self) -> Option<ethkey::Public> {
+		self.0.account_public(self.1, &self.2).ok()
 	}
 }

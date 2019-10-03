@@ -37,12 +37,29 @@ impl engine::signer::EngineSigner for EngineSigner {
 	fn sign(&self, message: ethkey::Message) -> Result<ethkey::Signature, ethkey::Error> {
 		match self.accounts.sign(self.address, Some(self.password.clone()), message) {
 			Ok(ok) => Ok(ok),
-			Err(_) => Err(ethkey::Error::InvalidSecret),
+			Err(e) => {
+				warn!("Unable to sign consensus message: {:?}", e);
+				Err(ethkey::Error::InvalidSecret)
+			},
+		}
+	}
+
+	fn decrypt(&self, auth_data: &[u8], cipher: &[u8]) -> Result<Vec<u8>, ethkey::crypto::Error> {
+		match self.accounts.decrypt(self.address, None, auth_data, cipher) {
+			Ok(plain) => Ok(plain),
+			Err(e) => {
+				warn!("Unable to decrypt message: {:?}", e);
+				Err(ethkey::crypto::Error::InvalidMessage)
+			},
 		}
 	}
 
 	fn address(&self) -> Address {
 		self.address
+	}
+
+	fn public(&self) -> Option<ethkey::Public> {
+		self.accounts.account_public(self.address, &self.password).ok()
 	}
 }
 

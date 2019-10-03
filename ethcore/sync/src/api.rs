@@ -390,6 +390,7 @@ impl EthSync {
 				snapshot_service: params.snapshot_service,
 				overlay: RwLock::new(HashMap::new()),
 				private_state: params.private_state,
+				message_cache: RwLock::new(HashMap::new()),
 			}),
 			light_proto: light_proto,
 			subprotocol_name: params.config.subprotocol_name,
@@ -475,6 +476,8 @@ struct SyncProtocolHandler {
 	overlay: RwLock<HashMap<BlockNumber, Bytes>>,
 	/// Private state db
 	private_state: Option<Arc<PrivateStateDB>>,
+	/// Cache of all messages that could not be sent
+	message_cache: RwLock<HashMap<Option<H512>, Vec<ChainMessageType>>>,
 }
 
 impl NetworkProtocolHandler for SyncProtocolHandler {
@@ -490,31 +493,54 @@ impl NetworkProtocolHandler for SyncProtocolHandler {
 	}
 
 	fn read(&self, io: &dyn NetworkContext, peer: &PeerId, packet_id: u8, data: &[u8]) {
+		let node_id = io.session_info(*peer).unwrap().id;
 		self.sync.dispatch_packet(&mut NetSyncIo::new(io,
 			&*self.chain,
 			&*self.snapshot_service,
 			&self.overlay,
 			self.private_state.clone()),
-			*peer, packet_id, data);
+			*peer, packet_id, data, node_id);
 	}
 
 	fn connected(&self, io: &dyn NetworkContext, peer: &PeerId) {
 		trace_time!("sync::connected");
+		let node_id = io.session_info(*peer).unwrap().id;
+		if io.is_reserved_peer(*peer) {
+			trace!(target: "consensus", "Connected to reserved peer {:?}", node_id);
+		}
 		// If warp protocol is supported only allow warp handshake
 		let warp_protocol = io.protocol_version(WARP_SYNC_PROTOCOL_ID, *peer).unwrap_or(0) != 0;
 		let warp_context = io.subprotocol_name() == WARP_SYNC_PROTOCOL_ID;
-		if warp_protocol == warp_context {
-			self.sync.write().on_peer_connected(&mut NetSyncIo::new(io,
+		let mut sync_io = NetSyncIo::new(io,
 			&*self.chain,
 			&*self.snapshot_service,
 			&self.overlay,
-			self.private_state.clone()),
-			*peer);
+			self.private_state.clone());
+		if warp_protocol == warp_context {
+			self.sync.write().on_peer_connected(&mut sync_io, *peer);
+		}
+		// now since we are connected, lets send any cached messages also
+		if let Some(vec_msg) = self.message_cache.write().remove(&node_id) {
+			trace!(target: "consensus", "Cached Messages: Trying to send cached messages to {:?}", node_id);
+			for msg in vec_msg {
+				match msg {
+					ChainMessageType::Consensus(message) => self.sync.write().send_consensus_packet(&mut sync_io, message, *peer),
+					ChainMessageType::PrivateTransaction(_transaction_hash, _message) =>
+						unimplemented!("TODO: privateTransaction not supported on send."),
+					ChainMessageType::SignedPrivateTransaction(_transaction_hash, _message) =>
+						unimplemented!("TODO: SignedPrivateTransaction not supported on send."),
+					ChainMessageType::PrivateStateRequest(_hash) =>
+						unimplemented!("TODO: PrivateStateRequest not supported on send."),
+				}
+			}
 		}
 	}
 
 	fn disconnected(&self, io: &dyn NetworkContext, peer: &PeerId) {
 		trace_time!("sync::disconnected");
+		if io.is_reserved_peer(*peer) {
+			trace!(target: "consensus", "Disconnected from reserved peer {:?}", io.session_info(*peer).expect("").id);
+		}
 		if io.subprotocol_name() != WARP_SYNC_PROTOCOL_ID {
 			self.sync.write().on_peer_aborting(&mut NetSyncIo::new(io,
 				&*self.chain,
@@ -639,6 +665,46 @@ impl ChainNotify for EthSync {
 					self.eth_handler.sync.write().propagate_private_transaction(&mut sync_io, transaction_hash, SignedPrivateTransactionPacket, message),
 				ChainMessageType::PrivateStateRequest(hash) =>
 					self.eth_handler.sync.write().request_private_state(&mut sync_io, &hash),
+			}
+		});
+	}
+
+	fn send(&self, message_type: ChainMessageType, node_id: Option<H512>) {
+		self.network.with_context(WARP_SYNC_PROTOCOL_ID, |context| {
+			let peer_ids = self.network.connected_peers();
+			let target_peer_id = peer_ids.into_iter().find(|p| {
+				match context.session_info(*p){
+					Some(session_info) => {
+						session_info.id == node_id
+					},
+					None => { warn!(target:"sync", "No session exists for peerId {:?}", p); false},
+				}
+			});
+
+			let my_peer_id = match target_peer_id {
+				None => {
+					trace!(target: "consensus", "Cached Messages: peer {:?} not connected, caching message...", target_peer_id);
+					let mut lock = self.eth_handler.message_cache.write();
+					lock.entry(node_id.clone()).or_default().push(message_type);
+					return;
+				}
+				Some(n) => n,
+			};
+
+			let mut sync_io = NetSyncIo::new(context,
+				&*self.eth_handler.chain,
+				&*self.eth_handler.snapshot_service,
+				&self.eth_handler.overlay,
+				self.eth_handler.private_state.clone());
+
+			match message_type {
+				ChainMessageType::Consensus(message) => self.eth_handler.sync.write().send_consensus_packet(&mut sync_io, message, my_peer_id),
+				ChainMessageType::PrivateTransaction(_transaction_hash, _message) =>
+					unimplemented!("TODO: PrivateTransaction not supported on send."),
+				ChainMessageType::SignedPrivateTransaction(_transaction_hash, _message) =>
+					unimplemented!("TODO: SignedPrivateTransaction not supported on send."),
+				ChainMessageType::PrivateStateRequest(_hash) =>
+					unimplemented!("TODO: PrivateStateRequest not supported on send."),
 			}
 		});
 	}

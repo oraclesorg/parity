@@ -16,7 +16,10 @@
 
 //! Transaction data structure.
 
-use std::ops::Deref;
+use std::{
+	ops::Deref,
+	hash::{Hash, Hasher},
+};
 
 use ethereum_types::{H256, H160, Address, U256, BigEndianHash};
 use ethjson;
@@ -274,6 +277,12 @@ impl Deref for UnverifiedTransaction {
 
 	fn deref(&self) -> &Self::Target {
 		&self.unsigned
+	}
+}
+
+impl Hash for UnverifiedTransaction {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		state.write(self.hash.as_bytes());
 	}
 }
 

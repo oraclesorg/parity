@@ -1,8 +1,8 @@
+use client_traits::HbbftOptions;
+use common_types::transaction::{Action, SignedTransaction, Transaction};
+use engine::signer::from_keypair;
 use ethcore::client::Client;
-use ethcore::engines::signer::from_keypair;
-use ethcore::miner::HbbftOptions;
 use ethcore::miner::{Miner, MinerService};
-use ethcore::spec::Spec;
 use ethcore::test_helpers::generate_dummy_client_with_spec;
 use ethcore::test_helpers::TestNotify;
 use ethereum_types::U256;
@@ -10,9 +10,9 @@ use ethkey::{Generator, KeyPair, Public, Random};
 use hbbft::crypto::serde_impl::SerdeSecret;
 use hbbft::NetworkInfo;
 use rustc_hex::FromHex;
+use spec::Spec;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use types::transaction::{Action, SignedTransaction, Transaction};
 
 pub fn hbbft_spec() -> Spec {
 	Spec::load(

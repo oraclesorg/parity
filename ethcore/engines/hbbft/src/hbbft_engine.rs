@@ -1,34 +1,36 @@
-use crate::contribution::{unix_now_millis, unix_now_secs, Contribution};
-use crate::sealing::{self, RlpSig, Sealing};
-use crate::NodeId;
-use ethcore::block::ExecutedBlock;
-use ethcore::client::{BlockId, EngineClient};
-use ethcore::engines::signer::EngineSigner;
-use ethcore::engines::{
-	total_difficulty_fork_choice, Engine, EngineError, EthEngine, ForkChoice, Seal, SealingState,
+use std::cmp::{max, min};
+use std::collections::BTreeMap;
+use std::convert::TryFrom;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
+
+use client_traits::{EngineClient, HbbftOptions};
+use common_types::{
+	engines::{params::CommonParams, Seal, SealingState},
+	errors::{BlockError, EngineError, EthcoreError as Error},
+	header::Header,
+	ids::BlockId,
+	transaction::SignedTransaction,
+	BlockNumber,
 };
-use ethcore::error::{BlockError, Error};
-use ethcore::machine::EthereumMachine;
-use ethcore::miner::HbbftOptions;
+use engine::{signer::EngineSigner, Engine};
 use ethereum_types::H512;
+use ethjson::spec::HbbftParams;
 use hbbft::crypto::serde_impl::SerdeSecret;
 use hbbft::crypto::{PublicKey, PublicKeySet, SecretKeyShare};
 use hbbft::honey_badger::{self, HoneyBadgerBuilder, Step};
 use hbbft::{NetworkInfo, Target};
 use io::{IoContext, IoHandler, IoService, TimerToken};
 use itertools::Itertools;
+use machine::{ExecutedBlock, Machine};
 use parking_lot::RwLock;
 use rlp::{self, Decodable, Rlp};
 use serde::Deserialize;
 use serde_json;
-use std::cmp::{max, min};
-use std::collections::BTreeMap;
-use std::convert::TryFrom;
-use std::sync::{Arc, Weak};
-use std::time::Duration;
-use types::header::{ExtendedHeader, Header};
-use types::transaction::SignedTransaction;
-use types::BlockNumber;
+
+use crate::contribution::{unix_now_millis, unix_now_secs, Contribution};
+use crate::sealing::{self, RlpSig, Sealing};
+use crate::NodeId;
 
 type HoneyBadger = honey_badger::HoneyBadger<Contribution, NodeId>;
 type Batch = honey_badger::Batch<Contribution, NodeId>;
@@ -44,28 +46,16 @@ enum Message {
 	Sealing(BlockNumber, sealing::Message),
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "camelCase")]
-struct HoneyBadgerOptions {
-	/// The minimum time duration between blocks, in seconds.
-	pub minimum_block_time: u64,
-	/// The length of the transaction queue at which block creation should be triggered.
-	pub transaction_queue_size_trigger: usize,
-	/// Should be true when running unit tests to avoid starting timers.
-	pub is_unit_test: Option<bool>,
-}
-
 pub struct HoneyBadgerBFT {
 	transition_service: IoService<()>,
 	client: Arc<RwLock<Option<Weak<dyn EngineClient>>>>,
 	signer: RwLock<Option<Box<dyn EngineSigner>>>,
-	machine: EthereumMachine,
+	machine: Machine,
 	network_info: RwLock<Option<NetworkInfo<NodeId>>>,
 	honey_badger: RwLock<Option<HoneyBadger>>,
 	public_master_key: RwLock<Option<PublicKey>>,
 	sealing: RwLock<BTreeMap<BlockNumber, Sealing>>,
-	options: HoneyBadgerOptions,
+	params: HbbftParams,
 	message_counter: RwLock<usize>,
 }
 
@@ -83,7 +73,7 @@ impl TransitionHandler {
 		if let Some(block_header) = client.block_header(BlockId::Latest) {
 			// The block timestamp and minimum block time are specified in seconds.
 			let next_block_time =
-				(block_header.timestamp() + self.engine.options.minimum_block_time) as u128 * 1000;
+				(block_header.timestamp() + self.engine.params.minimum_block_time) as u128 * 1000;
 
 			// We get the current time in milliseconds to calculate the exact timer duration.
 			let now = unix_now_millis();
@@ -144,11 +134,11 @@ impl IoHandler<()> for TransitionHandler {
 			if let Some(ref weak) = *self.client.read() {
 				if let Some(c) = weak.upgrade() {
 					timer_duration = self.duration_remaining_since_last_block(c);
-					// The duration should be at least 1ms and at most self.engine.options.minimum_block_time
+					// The duration should be at least 1ms and at most self.engine.params.minimum_block_time
 					timer_duration = max(timer_duration, Duration::from_millis(1));
 					timer_duration = min(
 						timer_duration,
-						Duration::from_secs(self.engine.options.minimum_block_time),
+						Duration::from_secs(self.engine.params.minimum_block_time),
 					);
 				}
 			}
@@ -162,14 +152,7 @@ impl IoHandler<()> for TransitionHandler {
 }
 
 impl HoneyBadgerBFT {
-	pub fn new(
-		params: &serde_json::Value,
-		machine: EthereumMachine,
-	) -> Result<Arc<dyn EthEngine>, Box<Error>> {
-		let options = match HoneyBadgerOptions::deserialize(params) {
-			Ok(options) => options,
-			Err(e) => panic!("HoneyBadgerBFTParams: Invalid chain spec options\n{}", e),
-		};
+	pub fn new(params: HbbftParams, machine: Machine) -> Result<Arc<dyn Engine>, Box<Error>> {
 		let engine = Arc::new(HoneyBadgerBFT {
 			transition_service: IoService::<()>::start().map_err(|err| Box::new(err.into()))?,
 			client: Arc::new(RwLock::new(None)),
@@ -179,11 +162,11 @@ impl HoneyBadgerBFT {
 			honey_badger: RwLock::new(None),
 			public_master_key: RwLock::new(None),
 			sealing: RwLock::new(BTreeMap::new()),
-			options,
+			params,
 			message_counter: RwLock::new(0),
 		});
 
-		if !engine.options.is_unit_test.unwrap_or(false) {
+		if !engine.params.is_unit_test.unwrap_or(false) {
 			let handler = TransitionHandler {
 				client: engine.client.clone(),
 				engine: engine.clone(),
@@ -197,21 +180,21 @@ impl HoneyBadgerBFT {
 		Ok(engine)
 	}
 
-	fn new_network_info(options: HbbftOptions, our_id: NodeId) -> Option<NetworkInfo<NodeId>> {
+	fn new_network_info(params: HbbftOptions, our_id: NodeId) -> Option<NetworkInfo<NodeId>> {
 		let secret_key_share_wrap: SerdeSecret<SecretKeyShare> =
-			serde_json::from_str(&options.hbbft_secret_share).ok()?;
+			serde_json::from_str(&params.hbbft_secret_share).ok()?;
 		let secret_key_share = secret_key_share_wrap.into_inner();
-		let pks: PublicKeySet = serde_json::from_str(&options.hbbft_public_key_set).ok()?;
+		let pks: PublicKeySet = serde_json::from_str(&params.hbbft_public_key_set).ok()?;
 		let ips: BTreeMap<NodeId, String> =
-			serde_json::from_str(&options.hbbft_validator_ip_addresses).ok()?;
+			serde_json::from_str(&params.hbbft_validator_ip_addresses).ok()?;
 
 		Some(NetworkInfo::new(our_id, secret_key_share, pks, ips.keys()))
 	}
 
-	fn new_honey_badger(&self, options: HbbftOptions, our_id: NodeId) -> Option<HoneyBadger> {
+	fn new_honey_badger(&self, params: HbbftOptions, our_id: NodeId) -> Option<HoneyBadger> {
 		// TODO: Retrieve the information to build a node-specific NetworkInfo
 		//       struct from the chain spec and from contracts.
-		if let Some(net_info) = HoneyBadgerBFT::new_network_info(options, our_id) {
+		if let Some(net_info) = HoneyBadgerBFT::new_network_info(params, our_id) {
 			let mut builder: HoneyBadgerBuilder<Contribution, _> =
 				HoneyBadger::builder(Arc::new(net_info.clone()));
 			*self.network_info.write() = Some(net_info);
@@ -222,17 +205,17 @@ impl HoneyBadgerBFT {
 	}
 
 	fn try_init_honey_badger(&self) {
-		let options = if let Some(client) = self.client_arc() {
+		let params = if let Some(client) = self.client_arc() {
 			// TODO: Retrieve the information to build a node-specific NetworkInfo
 			//       struct from the chain spec and from contracts.
-			client.hbbft_options().expect("hbbft options have to exist")
+			client.hbbft_options().expect("hbbft params have to exist")
 		} else {
 			return; // No client set yet.
 		};
-		let pks: PublicKeySet = match serde_json::from_str(&options.hbbft_public_key_set) {
+		let pks: PublicKeySet = match serde_json::from_str(&params.hbbft_public_key_set) {
 			Ok(pks) => pks,
 			Err(err) => {
-				error!(target: "engine", "Failed to read public master key from options: {:?}", err);
+				error!(target: "engine", "Failed to read public master key from params: {:?}", err);
 				return;
 			}
 		};
@@ -242,7 +225,7 @@ impl HoneyBadgerBFT {
 		} else {
 			return; // No engine signer set.
 		};
-		if let Some(honey_badger) = self.new_honey_badger(options, our_id) {
+		if let Some(honey_badger) = self.new_honey_badger(params, our_id) {
 			*self.honey_badger.write() = Some(honey_badger);
 		} else {
 			info!(target: "engine", "HoneyBadger algorithm could not be created - running as regular node");
@@ -284,9 +267,9 @@ impl HoneyBadgerBFT {
 			.sorted();
 		let timestamp = timestamps[timestamps.len() / 2];
 
-		if let Some(block) = client.create_pending_block_at(batch_txns, timestamp, batch.epoch) {
-			let block_num = block.header.number();
-			let hash = block.header.bare_hash();
+		if let Some(header) = client.create_pending_block_at(batch_txns, timestamp, batch.epoch) {
+			let block_num = header.number();
+			let hash = header.bare_hash();
 			trace!(target: "consensus", "Sending signature share of {} for block {}", hash, block_num);
 			let step = match self
 				.sealing
@@ -499,10 +482,10 @@ impl HoneyBadgerBFT {
 		client: &Arc<dyn EngineClient>,
 	) -> bool {
 		if let Some(block_header) = client.block_header(BlockId::Latest) {
-			let target_min_timestamp = block_header.timestamp() + self.options.minimum_block_time;
+			let target_min_timestamp = block_header.timestamp() + self.params.minimum_block_time;
 			let now = unix_now_secs();
 			target_min_timestamp <= now
-				&& client.queued_transactions().len() >= self.options.transaction_queue_size_trigger
+				&& client.queued_transactions().len() >= self.params.transaction_queue_size_trigger
 		} else {
 			false
 		}
@@ -519,12 +502,12 @@ impl HoneyBadgerBFT {
 	}
 }
 
-impl Engine<EthereumMachine> for HoneyBadgerBFT {
+impl Engine for HoneyBadgerBFT {
 	fn name(&self) -> &str {
 		"HoneyBadgerBFT"
 	}
 
-	fn machine(&self) -> &EthereumMachine {
+	fn machine(&self) -> &Machine {
 		&self.machine
 	}
 
@@ -549,10 +532,6 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		}
 	}
 
-	fn fork_choice(&self, new: &ExtendedHeader, current: &ExtendedHeader) -> ForkChoice {
-		total_difficulty_fork_choice(new, current)
-	}
-
 	fn register_client(&self, client: Weak<dyn EngineClient>) {
 		*self.client.write() = Some(client.clone());
 		self.try_init_honey_badger();
@@ -561,10 +540,6 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 	fn set_signer(&self, signer: Box<dyn EngineSigner>) {
 		*self.signer.write() = Some(signer);
 		self.try_init_honey_badger();
-	}
-
-	fn clear_signer(&self) {
-		*self.signer.write() = Default::default();
 	}
 
 	fn sealing_state(&self) -> SealingState {
@@ -612,11 +587,6 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 		}
 	}
 
-	fn on_prepare_block(&self, _block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> {
-		// TODO: inject random number transactions
-		Ok(Vec::new())
-	}
-
 	fn seal_fields(&self, _header: &Header) -> usize {
 		1
 	}
@@ -644,17 +614,21 @@ impl Engine<EthereumMachine> for HoneyBadgerBFT {
 	fn should_miner_prepare_blocks(&self) -> bool {
 		false
 	}
+
+	fn params(&self) -> &CommonParams {
+		self.machine.params()
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use crate::contribution::Contribution;
 	use crate::test_helpers::create_transaction;
+	use common_types::transaction::SignedTransaction;
 	use hbbft::honey_badger::{HoneyBadger, HoneyBadgerBuilder};
 	use hbbft::NetworkInfo;
 	use rand;
 	use std::sync::Arc;
-	use types::transaction::SignedTransaction;
 
 	#[test]
 	fn test_single_contribution() {

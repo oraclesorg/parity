@@ -46,10 +46,11 @@ use common_types::{
 	tree_route::TreeRoute,
 	verification::{VerificationQueueInfo, Unverified},
 };
-use ethereum_types::{Address, H256, U256};
+use ethereum_types::{Address, H256, H512, U256};
 use ethcore_db::keys::BlockReceipts;
 use ethcore_miner::pool::VerifiedTransaction;
 use kvdb::DBValue;
+use serde::Deserialize;
 use stats;
 use trace::{
 	FlatTrace,
@@ -61,6 +62,18 @@ use common_types::{
 	client_types::StateResult
 };
 use vm::{LastHashes, Schedule};
+
+/// Temporary: This data will be supplied by contracts.
+/// TODO: Remove once contracts supply the necessary data.
+#[derive(Deserialize, Default, Clone)]
+pub struct HbbftOptions {
+	/// Threshold Cryptography secret share.
+	pub hbbft_secret_share: String,
+	/// Threshold Cryptography public key shares.
+	pub hbbft_public_key_set: String,
+	/// The IP addresses/ports of all hbbft validators.
+	pub hbbft_validator_ip_addresses: String,
+}
 
 /// State information to be used during client query
 pub enum StateOrBlock {
@@ -157,6 +170,9 @@ pub trait EngineClient: Sync + Send + ChainInfo {
 	/// Broadcast a consensus message to the network.
 	fn broadcast_consensus_message(&self, message: Bytes);
 
+	/// Send a consensus message to the specified peer
+	fn send_consensus_message(&self, message: Bytes, node_id: Option<H512>);
+
 	/// Get the transition to the epoch the given parent hash is part of
 	/// or transitions to.
 	/// This will give the epoch that any children of this parent belong to.
@@ -172,6 +188,17 @@ pub trait EngineClient: Sync + Send + ChainInfo {
 
 	/// Get raw block header data by block id.
 	fn block_header(&self, id: BlockId) -> Option<encoded::Header>;
+
+	/// Get currently pending transactions
+	fn queued_transactions(&self) -> Vec<Arc<VerifiedTransaction>>;
+
+	/// Create block and queue it for sealing. Will return None if a block is already pending.
+	fn create_pending_block_at(&self, txns: Vec<SignedTransaction>, timestamp: u64, block_number: u64) -> Option<Header>;
+
+	/// Returns the currently configured options for the hbbft consensus engine.
+	/// TODO: Should be removed as soon as all information required to build this struct
+	///       can be obtained through the chain spec or contracts.
+	fn hbbft_options(&self) -> Option<HbbftOptions>;
 }
 
 /// Provides methods to import block into blockchain
@@ -193,7 +220,7 @@ pub trait IoClient: Sync + Send {
 	fn queue_ancient_block(&self, block_bytes: Unverified, receipts_bytes: Bytes) -> EthcoreResult<H256>;
 
 	/// Queue consensus engine message.
-	fn queue_consensus_message(&self, message: Bytes);
+	fn queue_consensus_message(&self, message: Bytes, node_id: Option<H512>);
 }
 
 /// Implement this for clients that need logic to decide when/how to advance.
@@ -470,6 +497,11 @@ pub trait ChainNotify: Send + Sync {
 
 	/// fires when chain broadcasts a message
 	fn broadcast(&self, _message_type: ChainMessageType) {
+		// does nothing by default
+	}
+
+	/// fires when chain sends a message to a specific peer
+	fn send(&self, _message_type: ChainMessageType, _node_id: Option<H512>) {
 		// does nothing by default
 	}
 

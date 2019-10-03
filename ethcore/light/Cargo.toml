@@ -24,6 +24,7 @@ patricia-trie-ethereum = { path = "../../util/patricia-trie-ethereum" }
 ethcore-network = { path = "../../util/network" }
 ethcore-miner = { path = "../../miner" }
 ethcore-io = { path = "../../util/io" }
+ethjson = { path = "../../json" }
 hash-db = "0.15.0"
 parity-util-mem = "0.2.0"
 vm = { path = "../vm" }

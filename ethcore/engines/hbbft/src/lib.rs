@@ -1,28 +1,34 @@
-extern crate common_types as types;
-extern crate ethcore;
+extern crate client_traits;
+extern crate common_types;
+extern crate engine;
 extern crate ethcore_io as io;
 extern crate ethcore_miner;
 extern crate ethereum_types;
 extern crate ethkey;
 extern crate hbbft;
 extern crate hbbft_testing;
-extern crate inventory;
 extern crate itertools;
 extern crate keccak_hash as hash;
+#[macro_use]
+extern crate log;
+extern crate machine;
 extern crate parking_lot;
 extern crate rand;
 extern crate rustc_hex;
 #[macro_use(Serialize, Deserialize)]
 extern crate serde;
+extern crate ethjson;
 extern crate rlp;
 extern crate serde_json;
-#[macro_use]
-extern crate log;
 
+#[cfg(test)]
+extern crate ethcore;
 #[cfg(test)]
 extern crate ethcore_accounts as accounts;
 #[cfg(test)]
 extern crate proptest;
+#[cfg(test)]
+extern crate spec;
 #[cfg(test)]
 extern crate toml;
 
@@ -35,7 +41,6 @@ pub mod test_helpers;
 
 use std::fmt;
 
-use ethcore::engines::registry::EnginePlugin;
 use ethkey::Public;
 
 pub use hbbft_engine::HoneyBadgerBFT;
@@ -55,17 +60,13 @@ impl fmt::Display for NodeId {
 	}
 }
 
-/// Registers the `HoneyBadgerBFT` engine. This must be called before parsing the chain spec.
-pub fn init() {
-	inventory::submit(EnginePlugin("HoneyBadgerBFT", HoneyBadgerBFT::new));
-}
-
 #[cfg(test)]
 mod tests {
 	use crate::test_helpers::{hbbft_client_setup, inject_transaction, HbbftTestData};
-	use ethcore::client::{BlockId, BlockInfo};
+	use client_traits::BlockInfo;
+	use common_types::ids::BlockId;
 	use ethereum_types::H256;
-	use ethkey::{KeyPair, Public};
+	use ethkey::{KeyPair, Public, Secret};
 	use hash::keccak;
 	use hbbft::NetworkInfo;
 	use hbbft_testing::proptest::{gen_seed, TestRng, TestRngSeed};
@@ -106,8 +107,8 @@ mod tests {
 	fn generate_nodes<R: Rng>(size: usize, rng: &mut R) -> BTreeMap<Public, HbbftTestData> {
 		let keypairs: Vec<KeyPair> = (1..=size)
 			.map(|i| {
-				let secret = keccak(i.to_string());
-				KeyPair::from_secret(secret.into()).expect("KeyPair generation must succeed")
+				let secret = Secret::from(<[u8; 32]>::from(keccak(i.to_string())));
+				KeyPair::from_secret(secret).expect("KeyPair generation must succeed")
 			})
 			.collect();
 		let ips_map: BTreeMap<Public, String> = keypairs
@@ -131,8 +132,6 @@ mod tests {
 	}
 
 	fn do_test_miner_transaction_injection(seed: TestRngSeed) {
-		super::init();
-
 		let mut rng = TestRng::from_seed(seed);
 		let test_data = generate_nodes(1, &mut rng)
 			.into_iter()
@@ -207,13 +206,11 @@ mod tests {
 	}
 
 	fn do_test_two_clients(seed: TestRngSeed) {
-		super::init();
 		let mut rng = TestRng::from_seed(seed);
 		test_with_size(&mut rng, 2);
 	}
 
 	fn do_test_multiple_clients(seed: TestRngSeed) {
-		super::init();
 		let mut rng = TestRng::from_seed(seed);
 		let sizes = vec![1, 2, 3, 5, rng.gen_range(6, 10)];
 		for size in sizes {
@@ -222,8 +219,6 @@ mod tests {
 	}
 
 	fn do_test_trigger_at_contribution_threshold(seed: TestRngSeed) {
-		super::init();
-
 		let mut rng = TestRng::from_seed(seed);
 
 		// A network size of 4 allows one adversary.

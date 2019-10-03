@@ -35,7 +35,7 @@ use std::{fs, io};
 use blockchain::{BlockChain, BlockChainDB, BlockChainDBHandler, Config as BlockChainConfig, ExtrasInsert};
 use blooms_db;
 use bytes::Bytes;
-use ethereum_types::{H256, U256, Address};
+use ethereum_types::{H256, H512, U256, Address};
 use ethkey::KeyPair;
 use evm::Factory as EvmFactory;
 use hash::keccak;
@@ -517,6 +517,8 @@ pub fn get_bad_state_dummy_block() -> Bytes {
 pub struct TestNotify {
 	/// Messages store
 	pub messages: RwLock<Vec<Bytes>>,
+	/// Targeted messages store
+	pub targeted_messages: RwLock<Vec<(Bytes, Option<H512>)>>,
 }
 
 impl ChainNotify for TestNotify {
@@ -528,5 +530,15 @@ impl ChainNotify for TestNotify {
 			ChainMessageType::PrivateStateRequest(_) => Vec::new(),
 		};
 		self.messages.write().push(data);
+	}
+
+	fn send(&self, message: ChainMessageType, node_id: Option<H512>) {
+		let data = match message {
+			ChainMessageType::Consensus(data) => data,
+			ChainMessageType::SignedPrivateTransaction(_, data) => data,
+			ChainMessageType::PrivateTransaction(_, data) => data,
+			ChainMessageType::PrivateStateRequest(_) => Vec::new(),
+		};
+		self.targeted_messages.write().push((data, node_id));
 	}
 }

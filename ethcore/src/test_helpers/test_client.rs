@@ -27,7 +27,7 @@ use blockchain::{TreeRoute, BlockReceipts};
 use bytes::Bytes;
 use db::{NUM_COLUMNS, COL_STATE};
 use ethcore_miner::pool::VerifiedTransaction;
-use ethereum_types::{H256, U256, Address};
+use ethereum_types::{H256, H512, U256, Address};
 use ethkey::{Generator, Random};
 use ethtrie;
 use hash::keccak;
@@ -71,8 +71,8 @@ use client::{
 };
 use client_traits::{
 	BlockInfo, Nonce, Balance, ChainInfo, TransactionInfo, BlockChainClient, ImportBlock,
-	AccountData, BlockChain, IoClient, BadBlocks, ScheduleInfo, StateClient, ProvingBlockChainClient,
-	StateOrBlock
+	AccountData, BlockChain, HbbftOptions, IoClient, BadBlocks, ScheduleInfo, StateClient,
+	ProvingBlockChainClient, StateOrBlock
 };
 use engine::Engine;
 use machine::executed::Executed;
@@ -939,8 +939,8 @@ impl IoClient for TestBlockChainClient {
 		self.import_block(unverified)
 	}
 
-	fn queue_consensus_message(&self, message: Bytes) {
-		self.spec.engine.handle_message(&message).unwrap();
+	fn queue_consensus_message(&self, message: Bytes, node_id: Option<H512>) {
+		self.spec.engine.handle_message(&message, node_id).unwrap();
 	}
 }
 
@@ -976,6 +976,10 @@ impl client_traits::EngineClient for TestBlockChainClient {
 
 	fn broadcast_consensus_message(&self, _message: Bytes) {}
 
+	fn send_consensus_message(&self, _message: Bytes, _node_id: Option<H512>) {
+		// TODO: allow test to intercept the message to relay it to other test clients
+	}
+
 	fn epoch_transition_for(&self, _block_hash: H256) -> Option<EpochTransition> {
 		None
 	}
@@ -988,5 +992,20 @@ impl client_traits::EngineClient for TestBlockChainClient {
 
 	fn block_header(&self, id: BlockId) -> Option<encoded::Header> {
 		BlockChainClient::block_header(self, id)
+	}
+
+	fn queued_transactions(&self) -> Vec<Arc<VerifiedTransaction>> {
+		self.miner.queued_transactions()
+	}
+
+	fn create_pending_block_at(&self, txns: Vec<SignedTransaction>, timestamp: u64, block_number: u64) -> Option<Header> {
+		self.miner.create_pending_block_at(self, txns, timestamp, block_number)
+	}
+
+	/// Returns the currently configured options for the hbbft consensus engine.
+	/// TODO: Should be removed as soon as all information required to build this struct
+	///       can be obtained through the chain spec or contracts.
+	fn hbbft_options(&self) -> Option<HbbftOptions> {
+		None
 	}
 }

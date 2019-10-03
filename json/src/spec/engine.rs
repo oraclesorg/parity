@@ -16,7 +16,7 @@
 
 //! Engine deserialization.
 
-use super::{Ethash, BasicAuthority, AuthorityRound, NullEngine, InstantSeal, Clique};
+use super::{Ethash, BasicAuthority, AuthorityRound, NullEngine, InstantSeal, Clique, Hbbft};
 use serde::Deserialize;
 
 /// Engine deserialization.
@@ -36,7 +36,9 @@ pub enum Engine {
 	/// AuthorityRound engine.
 	AuthorityRound(AuthorityRound),
 	/// Clique engine.
-	Clique(Clique)
+	Clique(Clique),
+	/// Hbbft engine.
+	Hbbft(Hbbft),
 }
 
 #[cfg(test)]
@@ -144,6 +146,21 @@ mod tests {
 		let deserialized: Engine = serde_json::from_str(s).unwrap();
 		match deserialized {
 			Engine::Clique(_) => {}, // Clique is unit tested in its own file.
+			_ => panic!(),
+		};
+
+		let s = r#"{
+			"hbbft": {
+				"params": {
+					"minimumBlockTime": 0,
+					"transactionQueueSizeTrigger": 1,
+					"isUnitTest": true
+				}
+			}
+		}"#;
+		let deserialized: Engine = serde_json::from_str(s).unwrap();
+		match deserialized {
+			Engine::Hbbft(_) => {}, // Hbbft is unit tested in its own file.
 			_ => panic!(),
 		};
 	}

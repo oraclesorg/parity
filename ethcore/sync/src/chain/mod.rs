@@ -111,7 +111,7 @@ use crate::{
 
 use bytes::Bytes;
 use client_traits::BlockChainClient;
-use ethereum_types::{H256, U256};
+use ethereum_types::{H256, H512, U256};
 use fastmap::{H256FastMap, H256FastSet};
 use futures::sync::mpsc as futures_mpsc;
 use keccak_hash::keccak;
@@ -445,8 +445,8 @@ impl ChainSyncApi {
 	}
 
 	/// Dispatch incoming requests and responses
-	pub fn dispatch_packet(&self, io: &mut dyn SyncIo, peer: PeerId, packet_id: u8, data: &[u8]) {
-		SyncSupplier::dispatch_packet(&self.sync, io, peer, packet_id, data)
+	pub fn dispatch_packet(&self, io: &mut dyn SyncIo, peer: PeerId, packet_id: u8, data: &[u8], node_id: Option<H512>) {
+		SyncSupplier::dispatch_packet(&self.sync, io, peer, packet_id, data, node_id)
 	}
 
 	/// Process a priority propagation queue.
@@ -1385,6 +1385,10 @@ impl ChainSync {
 	/// Broadcast consensus message to peers.
 	pub fn propagate_consensus_packet(&mut self, io: &mut dyn SyncIo, packet: Bytes) {
 		SyncPropagator::propagate_consensus_packet(self, io, packet);
+	}
+
+	pub fn send_consensus_packet(&mut self, io: &mut dyn SyncIo, packet: Bytes, peer_id: usize) {
+		SyncPropagator::send_consensus_packet(self, io, packet, peer_id);
 	}
 
 	/// Broadcast private transaction message to peers.

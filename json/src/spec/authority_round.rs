@@ -101,7 +101,7 @@ pub struct AuthorityRoundParams {
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthorityRound {
-	/// Ethash params.
+	/// Authority Round params.
 	pub params: AuthorityRoundParams,
 }
 
