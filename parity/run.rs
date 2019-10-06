@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 use std::thread;
 
 use ansi_term::Colour;
-use client_traits::{BlockInfo, BlockChainClient};
+use client_traits::{BlockInfo, BlockChainClient, HbbftOptions};
 use ethcore::client::{Client, DatabaseCompactionProfile, VMType};
 use ethcore::miner::{self, stratum, Miner, MinerService, MinerOptions};
 use snapshot::{self, SnapshotConfiguration};
@@ -497,6 +497,13 @@ fn execute_impl<Cr, Rr>(cmd: RunCmd, logger: Arc<RotatingLogger>, on_client_rq: 
 	miner.set_author(miner::Author::External(cmd.miner_extras.author));
 	miner.set_gas_range_target(cmd.miner_extras.gas_range_target);
 	miner.set_extra_data(cmd.miner_extras.extra_data);
+
+	// Temporary, until the hbbft options are being read from contracts
+	miner.set_hbbft_options(HbbftOptions {
+		hbbft_secret_share: cmd.miner_extras.hbbft_secret_key_share.unwrap_or("".into()),
+		hbbft_public_key_set: cmd.miner_extras.hbbft_public_key_set.unwrap_or("".into()),
+		hbbft_validator_ip_addresses: cmd.miner_extras.hbbft_validator_ip_addresses.unwrap_or("".into()),
+	});
 
 	if !cmd.miner_extras.work_notify.is_empty() {
 		miner.add_work_listener(Box::new(

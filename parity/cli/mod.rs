@@ -810,6 +810,22 @@ usage! {
 			"--engine-signer=[ADDRESS]",
 			"Specify the address which should be used to sign consensus messages and issue blocks. Relevant only to non-PoW chains.",
 
+			ARG arg_hbbft_our_id: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.hbbft_our_id.clone(),
+			"--hbbft-our-id=[STRING]",
+			"Specify the hbbft node id of the the validator.",
+
+			ARG arg_hbbft_secret_share: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.hbbft_secret_share.clone(),
+			"--hbbft-secret-share=[STRING]",
+			"Specify the secret share for threshold encryption for the hbbft validator.",
+
+			ARG arg_hbbft_public_key_set: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.hbbft_public_key_set.clone(),
+			"--hbbft-public-key-set=[STRING]",
+			"Serialization of the threshold encryption public commitmet for hbbft.",
+
+			ARG arg_hbbft_validator_ip_addresses: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.hbbft_validator_ip_addresses.clone(),
+			"--hbbft-validator-ip-addresses=[STRING]",
+			"Provide a list of validator ip addresses.",
+
 			ARG arg_tx_gas_limit: (Option<String>) = None, or |c: &Config| c.mining.as_ref()?.tx_gas_limit.clone(),
 			"--tx-gas-limit=[GAS]",
 			"Apply a limit of GAS as the maximum amount of gas a single transaction may have for it to be mined.",
@@ -1350,6 +1366,10 @@ struct Ipfs {
 struct Mining {
 	author: Option<String>,
 	engine_signer: Option<String>,
+	hbbft_our_id: Option<String>,
+	hbbft_secret_share: Option<String>,
+	hbbft_public_key_set: Option<String>,
+	hbbft_validator_ip_addresses: Option<String>,
 	force_sealing: Option<bool>,
 	reseal_on_uncle: Option<bool>,
 	reseal_on_txs: Option<String>,
@@ -1871,6 +1891,10 @@ mod tests {
 			// -- Sealing/Mining Options
 			arg_author: Some("0xdeadbeefcafe0000000000000000000000000001".into()),
 			arg_engine_signer: Some("0xdeadbeefcafe0000000000000000000000000001".into()),
+			arg_hbbft_our_id: Some("7".into()),
+			arg_hbbft_secret_share: Some("0xdeadbeefcafe0000000000000000000000000000000000000000000000000001".into()),
+			arg_hbbft_public_key_set: Some("deadbeefcafe0000000000000000000000000000000000000000000000000003deadbeefcafe0000000000000000000000000000000000000000000000000004".into()),
+			arg_hbbft_validator_ip_addresses: Some(r#"{"deadbeefcafe00000000000000000000000000000000000000000000000000050xdeadbeefcafe0000000000000000000000000000000000000000000000000006": "deadbeefcafe"}"#.to_string()),
 			flag_force_sealing: true,
 			arg_reseal_on_txs: "all".into(),
 			arg_reseal_min_period: 4000u64,
@@ -2150,6 +2174,10 @@ mod tests {
 			mining: Some(Mining {
 				author: Some("0xdeadbeefcafe0000000000000000000000000001".into()),
 				engine_signer: Some("0xdeadbeefcafe0000000000000000000000000001".into()),
+				hbbft_our_id: None,
+				hbbft_secret_share: None,
+				hbbft_public_key_set: None,
+				hbbft_validator_ip_addresses: None,
 				force_sealing: Some(true),
 				reseal_on_txs: Some("all".into()),
 				reseal_on_uncle: None,
