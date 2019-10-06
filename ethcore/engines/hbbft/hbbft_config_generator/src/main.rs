@@ -19,7 +19,6 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::fs;
-use std::num::NonZeroU32;
 use toml::{map::Map, Value};
 
 fn create_account() -> (Secret, Public, Address) {
@@ -327,7 +326,7 @@ fn main() {
 			&KeyPair::from_secret(enode.secret.clone()).unwrap(),
 			[0u8; 16],
 			&"test".into(),
-			NonZeroU32::new(10240).unwrap(),
+			10240,
 			"Test".to_owned(),
 			"{}".to_owned(),
 		)

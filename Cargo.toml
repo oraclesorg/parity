@@ -133,4 +133,5 @@ members = [
 	"ethcore/wasm/run",
 	"evmbin",
 	"parity-clib",
+	"ethcore/engines/hbbft/hbbft_config_generator",
 ]
