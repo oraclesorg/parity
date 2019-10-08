@@ -42,7 +42,6 @@ pub struct Hbbft {
 #[cfg(test)]
 mod tests {
 	use super::Hbbft;
-	use std::str::FromStr;
 
 	#[test]
 	fn hbbft_deserialization() {

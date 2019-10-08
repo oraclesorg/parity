@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate clap;
+extern crate client_traits;
 extern crate ethcore;
 extern crate ethkey;
 extern crate ethstore;
@@ -374,7 +375,7 @@ mod tests {
 
 	#[derive(Deserialize)]
 	struct TomlHbbftOptions {
-		pub mining: ethcore::miner::HbbftOptions,
+		pub mining: client_traits::HbbftOptions,
 	}
 
 	fn compare<'a, N>(net_info: &NetworkInfo<N>, options: &'a TomlHbbftOptions)
