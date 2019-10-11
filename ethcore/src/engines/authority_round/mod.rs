@@ -15,6 +15,21 @@
 // along with Parity Ethereum.  If not, see <http://www.gnu.org/licenses/>.
 
 //! A blockchain engine that supports a non-instant BFT proof-of-authority.
+//!
+//! It is recommended to use the `two_thirds_majority_transition` option, to defend against the
+//! ["Attack of the Clones"](https://arxiv.org/pdf/1902.10244.pdf). Newly started networks can
+//! set this option to `0`, to use a 2/3 quorum from the beginning.
+//!
+//! To support on-chain governance, the [ValidatorSet] is pluggable: Aura supports simple
+//! constant lists of validators as well as smart contract-based dynamic validator sets.
+//! Misbehavior is reported to the [ValidatorSet] as well, so that e.g. governance contracts
+//! can penalize or ban attacker's nodes.
+//!
+//! * "Benign" misbehavior are faults that can happen in normal operation, like failing
+//!   to propose a block in your slot, which could be due to a temporary network outage, or
+//!   wrong timestamps (due to out-of-sync clocks).
+//! * "Malicious" reports are made only if the sender misbehaved deliberately (or due to a
+//!   software bug), e.g. if they proposed multiple blocks with the same step number.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::{cmp::{self, Ordering}, fmt};
@@ -1534,7 +1549,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		// Report malice if the validator produced other sibling blocks in the same step.
 		let received_step_key = (step, *header.author());
 		let new_hash = header.hash();
-		if self.received_step_hashes.read().get(&received_step_key).into_iter().any(|h| *h != new_hash) {
+		if self.received_step_hashes.read().get(&received_step_key).map_or(false, |h| *h != new_hash) {
 			trace!(target: "engine", "Validator {} produced sibling blocks in the same step", header.author());
 			self.validators.report_malicious(header.author(), set_number, header.number(), Default::default());
 		} else {
