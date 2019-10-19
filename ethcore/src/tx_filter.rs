@@ -113,7 +113,7 @@ impl TransactionFilter {
 							.and_then(|value| decoder.decode(&value).map_err(|e| e.to_string()))
 							.map(|(p, f)| (p.low_u32(), f))
 					}
-					0xffff_ffff_ffff_fffe => {
+					3 => {
 						trace!(target: "tx_filter", "Using filter with gas price");
 						let (data, decoder) = transact_acl_gas_price::functions::allowed_tx_types::call(
 							sender, to, value, gas_price, transaction.data.clone()
@@ -171,7 +171,7 @@ mod test {
 
 	/// Contract code: https://gist.github.com/VladLupashevskyi/84f18eabb1e4afadf572cf92af3e7e7f
 	#[test]
-	fn transaction_filter() {
+	fn transaction_filter_ver_2() {
 		let spec_data = include_str!("../res/tx_permission_tests/contract_ver_2_genesis.json");
 
 		let db = test_helpers::new_db();
@@ -246,6 +246,48 @@ mod test {
 		assert!(filter.transaction_allowed(&genesis, block_number, &basic_tx_with_ether_and_to_key7.clone().sign(key6.secret(), None), &*client));
 		assert!(filter.transaction_allowed(&genesis, block_number, &basic_tx_to_key6.clone().sign(key7.secret(), None), &*client));
 		assert!(!filter.transaction_allowed(&genesis, block_number, &basic_tx_with_ether_and_to_key6.clone().sign(key7.secret(), None), &*client));
+	}
+
+	/// Contract code: res/tx_permission_tests/contract_ver_3.sol
+	#[test]
+	fn transaction_filter_ver_3() {
+		let spec_data = include_str!("../res/tx_permission_tests/contract_ver_3_genesis.json");
+
+		let db = test_helpers::new_db();
+		let tempdir = TempDir::new("").unwrap();
+		let spec = Spec::load(&tempdir.path(), spec_data.as_bytes()).unwrap();
+
+		let client = Client::new(
+			ClientConfig::default(),
+			&spec,
+			db,
+			Arc::new(Miner::new_for_tests(&spec, None)),
+			IoChannel::disconnected(),
+		).unwrap();
+		let key1 = KeyPair::from_secret(Secret::from("0000000000000000000000000000000000000000000000000000000000000001")).unwrap();
+
+		// The only difference to version 2 is that the contract now knows the transaction's gas price and data.
+		// So we only test those: The contract allows only transactions with either nonzero gas price or short data.
+
+		let filter = TransactionFilter::from_params(spec.params()).unwrap();
+		let mut tx = Transaction::default();
+		tx.action = Action::Call(Address::from("0000000000000000000000000000000000000042"));
+		tx.data = b"01234567".to_vec();
+		tx.gas_price = 0.into();
+
+		let genesis = client.block_hash(BlockId::Latest).unwrap();
+		let block_number = 1;
+
+		// Data too long and gas price zero. This transaction is not allowed.
+		assert!(!filter.transaction_allowed(&genesis, block_number, &tx.clone().sign(key1.secret(), None), &*client));
+
+		// But if we either set a nonzero gas price or short data or both, it is allowed.
+		tx.gas_price = 1.into();
+		assert!(filter.transaction_allowed(&genesis, block_number, &tx.clone().sign(key1.secret(), None), &*client));
+		tx.data = b"01".to_vec();
+		assert!(filter.transaction_allowed(&genesis, block_number, &tx.clone().sign(key1.secret(), None), &*client));
+		tx.gas_price = 0.into();
+		assert!(filter.transaction_allowed(&genesis, block_number, &tx.clone().sign(key1.secret(), None), &*client));
 	}
 
 	/// Contract code: https://gist.github.com/arkpar/38a87cb50165b7e683585eec71acb05a
