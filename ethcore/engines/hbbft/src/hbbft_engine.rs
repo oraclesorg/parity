@@ -618,6 +618,10 @@ impl Engine for HoneyBadgerBFT {
 	fn params(&self) -> &CommonParams {
 		self.machine.params()
 	}
+
+	fn use_block_author(&self) -> bool {
+		false
+	}
 }
 
 #[cfg(test)]
