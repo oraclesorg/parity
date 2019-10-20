@@ -422,7 +422,7 @@ impl Miner {
 		let params = self.params.read().clone();
 
 		let open_block = match chain.prepare_open_block(
-			params.author,
+			if self.engine.use_block_author() { params.author } else { Address::zero() },
 			params.gas_range_target,
 			params.extra_data,
 		) {

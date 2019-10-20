@@ -393,6 +393,9 @@ pub trait Engine: Sync + Send {
 	fn decode_transaction(&self, transaction: &[u8]) -> Result<UnverifiedTransaction, transaction::Error> {
 		self.machine().decode_transaction(transaction)
 	}
+
+	/// Use the author as signer as well as block author.
+	fn use_block_author(&self) -> bool { true }
 }
 
 /// Verifier for all blocks within an epoch with self-contained state.
