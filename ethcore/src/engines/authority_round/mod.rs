@@ -106,7 +106,7 @@ pub struct AuthorityRoundParams {
 	/// Empty step messages transition block.
 	pub empty_steps_transition: u64,
 	/// First block for which a 2/3 quorum (instead of 1/2) is required.
-	pub quorum_2_3_transition: BlockNumber,
+	pub two_thirds_majority_transition: BlockNumber,
 	/// Number of accepted empty steps.
 	pub maximum_empty_steps: usize,
 	/// Transition block to strict empty steps validation.
@@ -186,7 +186,7 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			maximum_uncle_count: p.maximum_uncle_count.map_or(0, Into::into),
 			empty_steps_transition: p.empty_steps_transition.map_or(u64::max_value(), |n| cmp::max(n.into(), 1)),
 			maximum_empty_steps: p.maximum_empty_steps.map_or(0, Into::into),
-			quorum_2_3_transition: p.quorum_2_3_transition.map_or_else(BlockNumber::max_value, Into::into),
+			two_thirds_majority_transition: p.two_thirds_majority_transition.map_or_else(BlockNumber::max_value, Into::into),
 			strict_empty_steps_transition: p.strict_empty_steps_transition.map_or(0, Into::into),
 			randomness_contract_address: p.randomness_contract_address.map(Into::into),
 			posdao_transition: p.posdao_transition.map(Into::into),
@@ -326,11 +326,11 @@ struct EpochManager {
 }
 
 impl EpochManager {
-	fn blank(quorum_2_3_transition: BlockNumber) -> Self {
+	fn blank(two_thirds_majority_transition: BlockNumber) -> Self {
 		EpochManager {
 			epoch_transition_hash: H256::default(),
 			epoch_transition_number: 0,
-			finality_checker: RollingFinality::blank(Vec::new(), quorum_2_3_transition),
+			finality_checker: RollingFinality::blank(Vec::new(), two_thirds_majority_transition),
 			force: true,
 		}
 	}
@@ -387,8 +387,8 @@ impl EpochManager {
 				.map(|(list, _)| list.into_inner())
 				.expect("proof produced by this engine; therefore it is valid; qed");
 
-			let quorum_2_3_transition = self.finality_checker.quorum_2_3_transition();
-			self.finality_checker = RollingFinality::blank(epoch_set, quorum_2_3_transition);
+			let two_thirds_majority_transition = self.finality_checker.two_thirds_majority_transition();
+			self.finality_checker = RollingFinality::blank(epoch_set, two_thirds_majority_transition);
 		}
 
 		self.epoch_transition_hash = last_transition.block_hash;
@@ -550,7 +550,7 @@ pub struct AuthorityRound {
 	maximum_uncle_count: usize,
 	empty_steps_transition: u64,
 	strict_empty_steps_transition: u64,
-	quorum_2_3_transition: BlockNumber,
+	two_thirds_majority_transition: BlockNumber,
 	maximum_empty_steps: usize,
 	machine: EthereumMachine,
 	/// If set, enables random number contract integration.
@@ -570,7 +570,7 @@ struct EpochVerifier {
 	subchain_validators: SimpleList,
 	empty_steps_transition: u64,
 	/// First block for which a 2/3 quorum (instead of 1/2) is required.
-	quorum_2_3_transition: BlockNumber,
+	two_thirds_majority_transition: BlockNumber,
 }
 
 impl super::EpochVerifier<EthereumMachine> for EpochVerifier {
@@ -584,7 +584,7 @@ impl super::EpochVerifier<EthereumMachine> for EpochVerifier {
 
 	fn check_finality_proof(&self, proof: &[u8]) -> Option<Vec<H256>> {
 		let signers = self.subchain_validators.clone().into_inner();
-		let mut finality_checker = RollingFinality::blank(signers, self.quorum_2_3_transition);
+		let mut finality_checker = RollingFinality::blank(signers, self.two_thirds_majority_transition);
 		let mut finalized = Vec::new();
 
 		let headers: Vec<Header> = Rlp::new(proof).as_list().ok()?;
@@ -822,7 +822,7 @@ impl AuthorityRound {
 				validate_score_transition: our_params.validate_score_transition,
 				validate_step_transition: our_params.validate_step_transition,
 				empty_steps: Default::default(),
-				epoch_manager: Mutex::new(EpochManager::blank(our_params.quorum_2_3_transition)),
+				epoch_manager: Mutex::new(EpochManager::blank(our_params.two_thirds_majority_transition)),
 				immediate_transitions: our_params.immediate_transitions,
 				block_reward: our_params.block_reward,
 				block_reward_contract_transitions: our_params.block_reward_contract_transitions,
@@ -830,7 +830,7 @@ impl AuthorityRound {
 				maximum_uncle_count: our_params.maximum_uncle_count,
 				empty_steps_transition: our_params.empty_steps_transition,
 				maximum_empty_steps: our_params.maximum_empty_steps,
-				quorum_2_3_transition: our_params.quorum_2_3_transition,
+				two_thirds_majority_transition: our_params.two_thirds_majority_transition,
 				strict_empty_steps_transition: our_params.strict_empty_steps_transition,
 				machine,
 				randomness_contract_address: our_params.randomness_contract_address,
@@ -1385,8 +1385,8 @@ impl Engine<EthereumMachine> for AuthorityRound {
 
 		let mut beneficiaries = Vec::new();
 
-		if block.header.number() == self.quorum_2_3_transition {
-			info!(target: "engine", "Block {}: Transitioning to 2/3 quorum.", self.quorum_2_3_transition);
+		if block.header.number() == self.two_thirds_majority_transition {
+			info!(target: "engine", "Block {}: Transitioning to 2/3 quorum.", self.two_thirds_majority_transition);
 		}
 
 		if block.header.number() >= self.empty_steps_transition {
@@ -1792,7 +1792,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 					step: self.step.clone(),
 					subchain_validators: list,
 					empty_steps_transition: self.empty_steps_transition,
-					quorum_2_3_transition: self.quorum_2_3_transition,
+					two_thirds_majority_transition: self.two_thirds_majority_transition,
 				});
 
 				match finalize {
@@ -1916,7 +1916,7 @@ mod tests {
 			block_reward: Default::default(),
 			block_reward_contract_transitions: Default::default(),
 			strict_empty_steps_transition: 0,
-			quorum_2_3_transition: 0,
+			two_thirds_majority_transition: 0,
 			randomness_contract_address: None,
 			posdao_transition: Some(0),
 			block_gas_limit_contract_transitions: BTreeMap::new(),
@@ -2188,7 +2188,7 @@ mod tests {
 		let validator_set = TestSet::from_validators(vec![addr0, addr1]);
 		let aura = aura(|p| p.validators = Box::new(validator_set.clone()));
 
-		aura.set_signer(Box::new((Arc::new(tap), addr0, "0".into())));
+		aura.set_signer(Some(Box::new((Arc::new(tap), addr0, "0".into()))));
 
 		let mut parent_header: Header = Header::default();
 		parent_header.set_number(2);
