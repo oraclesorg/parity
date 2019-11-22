@@ -40,7 +40,7 @@ use_contract!(aura_random, "res/contracts/authority_round_random.json");
 ///        |                                              |
 ///        |  call                                        |
 ///        |  `commitHash()`                              |  call
-///        |                                              |  `revealSecret`
+///        |                                              |  `revealNumber`
 ///        |                                              |
 /// +------v-------+                              +-------+-------+
 /// |              |                              |               |
@@ -227,7 +227,7 @@ impl RandomnessPhase {
 				}
 
 				// We are now sure that we have the correct secret and can reveal it.
-				let (data, _decoder) = aura_random::functions::reveal_secret::call(secret);
+				let (data, _decoder) = aura_random::functions::reveal_number::call(secret);
 				Ok(Some(data))
 			}
 		}
