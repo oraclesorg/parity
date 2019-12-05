@@ -69,10 +69,8 @@ pub struct AuthorityRoundParams {
 	pub strict_empty_steps_transition: Option<Uint>,
 	/// First block for which a 2/3 quorum (instead of 1/2) is required.
 	pub two_thirds_majority_transition: Option<Uint>,
-	/// If set, enables random number contract integration, and use Proof of
-	/// Stake (PoS) consensus.  Otherwise, use Proof of Authority (PoA)
-	/// consensus.
-	pub randomness_contract_address: Option<Address>,
+	/// A map of randomness contract transitions.
+	pub randomness_contract_address: Option<BTreeMap<Uint, Address>>,
 	/// The block number at which the consensus engine switches from AuRa to AuRa with POSDAO
 	/// modifications.
 	pub posdao_transition: Option<Uint>,
@@ -117,6 +115,10 @@ mod tests {
 				"blockGasLimitContractTransitions": {
 					"10": "0x1000000000000000000000000000000000000001",
 					"20": "0x2000000000000000000000000000000000000002"
+				},
+				"randomnessContractAddress": {
+					"10": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					"20": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 				}
 			}
 		}"#;
@@ -133,5 +135,10 @@ mod tests {
 			 (Uint(20.into()), Address(H160::from_str("2000000000000000000000000000000000000002").unwrap()))];
 		assert_eq!(deserialized.params.block_gas_limit_contract_transitions,
 				   Some(expected_bglc.to_vec().into_iter().collect()));
+		assert_eq!(deserialized.params.randomness_contract_address.unwrap(),
+			vec![
+				(Uint(10.into()), Address(H160::from_str("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap())),
+				(Uint(20.into()), Address(H160::from_str("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").unwrap())),
+			].into_iter().collect());
 	}
 }

@@ -111,8 +111,8 @@ pub struct AuthorityRoundParams {
 	pub maximum_empty_steps: usize,
 	/// Transition block to strict empty steps validation.
 	pub strict_empty_steps_transition: u64,
-	/// If set, enables random number contract integration.
-	pub randomness_contract_address: Option<Address>,
+	/// If set, enables random number contract integration. It maps the transition block to the contract address.
+	pub randomness_contract_address: BTreeMap<u64, Address>,
 	/// If set, this is the block number at which the consensus engine switches from AuRa to AuRa
 	/// with POSDAO modifications.
 	pub posdao_transition: Option<BlockNumber>,
@@ -173,6 +173,11 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			.into_iter()
 			.map(|(block_num, address)| (block_num.into(), address.into()))
 			.collect();
+		let randomness_contract_address = p.randomness_contract_address.map_or_else(BTreeMap::new, |transitions| {
+			transitions.into_iter().map(|(ethjson::uint::Uint(block), addr)| {
+				(block.as_u64(), addr.into())
+			}).collect()
+		});
 		AuthorityRoundParams {
 			step_durations,
 			validators: new_validator_set_posdao(p.validators, p.posdao_transition.map(Into::into)),
@@ -188,9 +193,9 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 			maximum_empty_steps: p.maximum_empty_steps.map_or(0, Into::into),
 			two_thirds_majority_transition: p.two_thirds_majority_transition.map_or_else(BlockNumber::max_value, Into::into),
 			strict_empty_steps_transition: p.strict_empty_steps_transition.map_or(0, Into::into),
-			randomness_contract_address: p.randomness_contract_address.map(Into::into),
 			posdao_transition: p.posdao_transition.map(Into::into),
 			block_gas_limit_contract_transitions,
+			randomness_contract_address,
 		}
 	}
 }
@@ -553,8 +558,6 @@ pub struct AuthorityRound {
 	two_thirds_majority_transition: BlockNumber,
 	maximum_empty_steps: usize,
 	machine: EthereumMachine,
-	/// If set, enables random number contract integration.
-	randomness_contract_address: Option<Address>,
 	/// The block number at which the consensus engine switches from AuRa to AuRa with POSDAO
 	/// modifications.
 	posdao_transition: Option<BlockNumber>,
@@ -562,6 +565,8 @@ pub struct AuthorityRound {
 	block_gas_limit_contract_transitions: BTreeMap<u64, Address>,
 	/// History of step hashes recently received from peers.
 	received_step_hashes: RwLock<BTreeMap<(u64, Address), H256>>,
+	/// If set, enables random number contract integration. It maps the transition block to the contract address.
+	randomness_contract_address: BTreeMap<u64, Address>,
 }
 
 // header-chain validator.
@@ -1479,7 +1484,7 @@ impl Engine<EthereumMachine> for AuthorityRound {
 		};
 
 		// Random number generation
-		if let Some(contract_addr) = self.randomness_contract_address {
+		if let Some((_, &contract_addr)) = self.randomness_contract_address.range(..=block.header.number()).last() {
 			let contract = util::BoundContract::bind(&*client, BlockId::Latest, contract_addr);
 			// TODO: How should these errors be handled?
 			let phase = randomness::RandomnessPhase::load(&contract, our_addr)
@@ -1917,7 +1922,7 @@ mod tests {
 			block_reward_contract_transitions: Default::default(),
 			strict_empty_steps_transition: 0,
 			two_thirds_majority_transition: 0,
-			randomness_contract_address: None,
+			randomness_contract_address: BTreeMap::new(),
 			posdao_transition: Some(0),
 			block_gas_limit_contract_transitions: BTreeMap::new(),
 		};
