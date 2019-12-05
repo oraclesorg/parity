@@ -185,25 +185,8 @@ pub struct Clique {
 
 impl Clique {
 	/// Initialize Clique engine from empty state.
-	pub fn new(our_params: CliqueParams, machine: EthereumMachine) -> Result<Arc<Self>, Error> {
-		let mut engine = Clique {
-			epoch_length: our_params.epoch,
-			period: our_params.period,
-			client: Default::default(),
-			block_state_by_hash: RwLock::new(LruCache::new(STATE_CACHE_NUM)),
-			proposals: Default::default(),
-			signer: Default::default(),
-			machine,
-			step_service: None,
-		};
-
-		let res = Arc::new(engine);
-
-		if our_params.period > 0 {
-			engine.step_service = Some(StepService::start(Arc::downgrade(&res) as Weak<Engine<_>>));
-		}
-
-		Ok(res)
+	pub fn new(_our_params: CliqueParams, _machine: EthereumMachine) -> Result<Arc<Self>, Error> {
+		unimplemented!()
 	}
 
 	#[cfg(test)]
