@@ -35,7 +35,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::{cmp::{self, Ordering}, fmt};
 use std::iter::{self, FromIterator};
 use std::ops::Deref;
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicU16, AtomicU64, AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Weak, Arc};
 use std::time::{UNIX_EPOCH, Duration};
 use std::u64;
@@ -205,81 +205,76 @@ impl From<ethjson::spec::AuthorityRoundParams> for AuthorityRoundParams {
 struct Step {
 	calibrate: bool, // whether calibration is enabled.
 	inner: AtomicU64,
+	/// Duration of the current step.
+	current_duration: AtomicU16,
 	/// Planned durations of steps.
 	durations: BTreeMap<u64, u16>,
+	/// The time of the start of the first step after the last change of step duration, in seconds.
+	starting_sec: AtomicU64,
+	/// The number of the first step after the last change of step duration.
+	starting_step: AtomicU64,
 }
 
 impl Step {
 	fn load(&self) -> u64 { self.inner.load(AtomicOrdering::SeqCst) }
-
 	fn duration_remaining(&self) -> Duration {
-		self.opt_duration_remaining().unwrap_or_else(|| {
-			let ctr = self.load();
-			error!(target: "engine", "Step counter under- or overflow: {}, aborting", ctr);
-			panic!("step counter under- or overflow: {}", ctr)
-		})
-	}
-
-	fn opt_duration_remaining(&self) -> Option<Duration> {
 		let now = unix_now();
-		let mut prev_dur = u64::from(self.durations[&0]);
-		let mut prev_step = 0u64;
-		let mut time = 0u64;
-		let next_step = self.load().checked_add(1)?;
-		for (step, dur) in self.durations.range(..next_step).skip(1) {
-			time = time.checked_add(step.checked_sub(prev_step)?.checked_mul(prev_dur)?)?;
-			prev_step = *step;
-			prev_dur = u64::from(*dur);
-		}
-		time = time.checked_add(next_step.checked_sub(prev_step)?.checked_mul(prev_dur)?)?;
-		let step_end = Duration::from_secs(time);
-		if step_end > now {
-			Some(step_end - now)
-		} else {
-			Some(Duration::from_secs(0))
+		let expected_seconds = self.load()
+			.checked_sub(self.starting_step.load(AtomicOrdering::SeqCst) as u64)
+			.and_then(|x| x.checked_add(1))
+			.and_then(|x| x.checked_mul(self.current_duration.load(AtomicOrdering::SeqCst) as u64))
+			.and_then(|x| x.checked_add(self.starting_sec.load(AtomicOrdering::SeqCst) as u64))
+			.map(Duration::from_secs);
+		match expected_seconds {
+			Some(step_end) if step_end > now => step_end - now,
+			Some(_) => Duration::from_secs(0),
+			None => {
+				let ctr = self.load();
+				error!(target: "engine", "Step counter under- or overflow: {}, aborting", ctr);
+				panic!("step counter under- or overflow: {}", ctr)
+			},
 		}
 	}
 
 	/// Increments the step number.
 	///
-	/// Panics if the new step number is `u64::MAX`.
+	/// Panics if the new step number is `usize::MAX`.
 	fn increment(&self) {
+		use std::usize;
 		// fetch_add won't panic on overflow but will rather wrap
 		// around, leading to zero as the step counter, which might
 		// lead to unexpected situations, so it's better to shut down.
-		if self.inner.fetch_add(1, AtomicOrdering::SeqCst) == u64::MAX {
-			error!(target: "engine", "Step counter is too high: {}, aborting", u64::MAX);
-			panic!("step counter is too high: {}", u64::MAX);
+		let prev_step = self.inner.fetch_add(1, AtomicOrdering::SeqCst);
+		if prev_step == u64::MAX {
+			error!(target: "engine", "Step counter is too high: {}, aborting", usize::MAX);
+			panic!("step counter is too high: {}", usize::MAX);
+		}
+		let next_step = prev_step + 1;
+		if let Some(&next_dur) = self.durations.get(&next_step) {
+			let prev_dur = *self.durations.range(0 .. next_step).last().expect("step duration map is empty").1;
+			let prev_starting_sec = self.starting_sec.load(AtomicOrdering::SeqCst);
+			let prev_starting_step = self.starting_step.load(AtomicOrdering::SeqCst);
+			let steps_elapsed = prev_step - prev_starting_step;
+			let starting_sec = prev_starting_sec + (steps_elapsed * prev_dur as u64);
+			self.current_duration.store(next_dur, AtomicOrdering::SeqCst);
+			self.starting_sec.store(starting_sec, AtomicOrdering::SeqCst);
+			self.starting_step.store(next_step, AtomicOrdering::SeqCst);
+			self.inner.store(next_step, AtomicOrdering::SeqCst);
+			trace!(target: "engine", "Step duration updated to {} at step {}", next_dur, next_step);
 		}
 	}
 
 	fn calibrate(&self) {
 		if self.calibrate {
-			if self.opt_calibrate().is_none() {
-				let ctr = self.load();
-				error!(target: "engine", "Step counter under- or overflow: {}, aborting", ctr);
-				panic!("step counter under- or overflow: {}", ctr)
-			}
+			let starting_sec = self.starting_sec.load(AtomicOrdering::SeqCst);
+			let starting_step = self.starting_step.load(AtomicOrdering::SeqCst);
+			let step = (
+				(unix_now().as_secs() - starting_sec) /
+					(self.current_duration.load(AtomicOrdering::SeqCst) as u64)
+			) +	starting_step + 1;
+			trace!(target: "engine", "calibrating step {}", step);
+			self.inner.store(step, AtomicOrdering::SeqCst);
 		}
-	}
-
-	fn opt_calibrate(&self) -> Option<()> {
-		let now = unix_now();
-		let mut prev_dur = u64::from(self.durations[&0]);
-		let mut prev_step = 0u64;
-		let mut prev_time = 0u64;
-		for (step, dur) in self.durations.iter().skip(1) {
-			let next_time = prev_time.checked_add(step.checked_sub(prev_step)?.checked_mul(prev_dur)?)?;
-			if Duration::from_secs(next_time) >= now {
-				break;
-			}
-			prev_time = next_time;
-			prev_step = *step;
-			prev_dur = u64::from(*dur);
-		}
-		let new_step = (now.as_secs().checked_sub(prev_time)? / prev_dur).checked_add(prev_step)?;
-		self.inner.store(new_step, AtomicOrdering::SeqCst);
-		Some(())
 	}
 
 	fn check_future(&self, given: u64) -> Result<(), Option<OutOfBounds<u64>>> {
@@ -299,7 +294,7 @@ impl Step {
 			Err(None)
 		// wait a bit for blocks in near future
 		} else if given > current {
-			let d = *self.durations.range(..=current).last().expect("Duration map has at least a 0 entry.").1 as u64;
+			let d = self.current_duration.load(AtomicOrdering::SeqCst) as u64;
 			Err(Some(OutOfBounds {
 				min: None,
 				max: Some(d * current),
@@ -795,25 +790,28 @@ impl<'a, A: ?Sized, B> Deref for CowLike<'a, A, B> where B: AsRef<A> {
 impl AuthorityRound {
 	/// Create a new instance of AuthorityRound engine.
 	pub fn new(our_params: AuthorityRoundParams, machine: EthereumMachine) -> Result<Arc<Self>, Error> {
-		if !our_params.step_durations.contains_key(&0) {
+		let duration = *our_params.step_durations.get(&0).unwrap_or_else(|| {
 			error!(target: "engine", "Authority Round step 0 duration is undefined, aborting");
 			panic!("authority_round: step 0 duration is undefined")
-		}
+		});
 		if our_params.step_durations.values().any(|v| *v == 0) {
 			panic!("authority_round: step duration cannot be 0");
 		}
 		let should_timeout = our_params.start_step.is_none();
-		let initial_step = our_params.start_step.unwrap_or(0);
-		let step = Step {
-			inner: AtomicU64::new(initial_step),
-			calibrate: our_params.start_step.is_none(),
-			durations: our_params.step_durations.clone(),
-		};
-		step.calibrate();
 		let engine = Arc::new(
 			AuthorityRound {
 				transition_service: IoService::<()>::start()?,
-				step: Arc::new(PermissionedStep { inner: step, can_propose: AtomicBool::new(true) }),
+				step: Arc::new(PermissionedStep {
+					inner: Step {
+						inner: AtomicU64::new(0),
+						calibrate: our_params.start_step.is_none(),
+						current_duration: AtomicU16::new(duration),
+						durations: our_params.step_durations.clone(),
+						starting_sec: AtomicU64::new(unix_now().as_secs()),
+						starting_step: AtomicU64::new(0),
+					},
+					can_propose: AtomicBool::new(true),
+				}),
 				client: Arc::new(RwLock::new(None)),
 				signer: RwLock::new(None),
 				validators: our_params.validators,
