@@ -1,13 +1,18 @@
-## Parity-Ethereum [v2.7.1](https://github.com/paritytech/parity-ethereum/releases/tag/v2.7.1)
-Parity Ethereum v2.7.2-stable is a patch version release of parity-ethereum. 
+## Parity-Ethereum [v2.7.2-posdao](https://github.com/poanetwork/parity-ethereum/releases/tag/v2.7.2-posdao)
+POSDAO version of Parity Ethereum v2.7.2-stable,
+with POSDAO transition and malice report queue (#11245)
+and minor Authority Round cleanups (#11408).
+
+## Parity-Ethereum [v2.7.2](https://github.com/paritytech/parity-ethereum/releases/tag/v2.7.2)
+Parity Ethereum v2.7.2-stable is a patch version release of parity-ethereum.
 Starting in the 2.7.x series of releases, parity-ethereum is switching to a single `stable` release
 track. As a result, any clients that currently receive updates from the `beta`
 track should switch to the `stable` track.
-Due to database format changes, upgrading from 2.5.x or 2.6.x is one-way only. 
+Due to database format changes, upgrading from 2.5.x or 2.6.x is one-way only.
 
 The full list of included changes:
 
-* backwards compatible call_type creation_method (#11450 + #11455) 
+* backwards compatible call_type creation_method (#11450 + #11455)
 * chore: remove unused dependencies (#11432)
 * Cargo.lock: new lockfile format (#11448)
 * rlp_derive: cleanup (#11446)
@@ -18,14 +23,14 @@ The full list of included changes:
 * fix: export hardcoded sync format (#11416)
 * verification: fix race same block + misc (#11400)
 * update classic testnet bootnodes (#11398)
-* gcc to clang (#11453) 
+* gcc to clang (#11453)
 
 ## Parity-Ethereum [v2.7.1](https://github.com/paritytech/parity-ethereum/releases/tag/v2.7.1)
-Parity Ethereum v2.7.1-stable is a patch version release of parity-ethereum. 
+Parity Ethereum v2.7.1-stable is a patch version release of parity-ethereum.
 Starting in the 2.7.x series of releases, parity-ethereum is switching to a single `stable` release
 track. As a result, any clients that currently receive updates from the `beta`
 track should switch to the `stable` track.
-Due to database format changes, upgrading from 2.5.x or 2.6.x is one-way only. 
+Due to database format changes, upgrading from 2.5.x or 2.6.x is one-way only.
 
 The full list of included changes from `v2.7.0` to `v2.7.1`:
 
