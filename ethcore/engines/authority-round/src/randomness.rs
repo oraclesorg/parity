@@ -74,11 +74,12 @@ use ethabi::Hash;
 use ethabi_contract::use_contract;
 use ethereum_types::{Address, H256, U256};
 use keccak_hash::keccak;
-use log::{debug, error};
+use log::{debug, error, trace};
 use parity_crypto::publickey::{ecies, Error as CryptoError};
 use parity_bytes::Bytes;
 use rand::Rng;
 use engine::signer::EngineSigner;
+use std::time::{Duration, Instant};
 
 use crate::util::{BoundContract, CallError};
 
@@ -148,6 +149,12 @@ impl RandomnessPhase {
 		contract: &BoundContract,
 		our_address: Address,
 	) -> Result<RandomnessPhase, PhaseError> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
+		let start1 = Instant::now();
+
 		// Determine the current round and which phase we are in.
 		let round = contract
 			.call_const(aura_random::functions::current_collect_round::call())
@@ -156,6 +163,11 @@ impl RandomnessPhase {
 			.call_const(aura_random::functions::is_commit_phase::call())
 			.map_err(PhaseError::LoadFailed)?;
 
+		let point1 = start1.elapsed();
+		trace!(target: "engine", "randomness::load point1: {} ms", took_ms(&point1));
+
+		let start2 = Instant::now();
+
 		// Ensure we are not committing or revealing twice.
 		let committed = contract
 			.call_const(aura_random::functions::is_committed::call(
@@ -163,12 +175,21 @@ impl RandomnessPhase {
 				our_address,
 			))
 			.map_err(PhaseError::LoadFailed)?;
+
+		let point2 = start2.elapsed();
+		trace!(target: "engine", "randomness::load point2: {} ms", took_ms(&point2));
+
+		let start3 = Instant::now();
+
 		let revealed: bool = contract
 			.call_const(aura_random::functions::sent_reveal::call(
 				round,
 				our_address,
 			))
 			.map_err(PhaseError::LoadFailed)?;
+
+		let point3 = start3.elapsed();
+		trace!(target: "engine", "randomness::load point3: {} ms", took_ms(&point3));
 
 		// With all the information known, we can determine the actual state we are in.
 		if is_commit_phase {
@@ -207,31 +228,69 @@ impl RandomnessPhase {
 		rng: &mut R,
 		signer: &dyn EngineSigner,
 	) -> Result<Option<Bytes>, PhaseError> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
 		match self {
 			RandomnessPhase::Waiting | RandomnessPhase::Committed => Ok(None),
 			RandomnessPhase::BeforeCommit => {
+				let start1 = Instant::now();
+
 				// Generate a new random number, but don't reveal it yet. Instead, we publish its hash to the
 				// randomness contract, together with the number encrypted to ourselves. That way we will later be
 				// able to decrypt and reveal it, and other parties are able to verify it against the hash.
 				let number: RandNumber = rng.gen();
+
+				let point1 = start1.elapsed();
+				trace!(target: "engine", "randomness::advance point1: {} ms", took_ms(&point1));
+
+				let start2 = Instant::now();
 				let number_hash: Hash = keccak(number.as_bytes());
+				let point2 = start2.elapsed();
+				trace!(target: "engine", "randomness::advance point2: {} ms", took_ms(&point2));
+
+				let start3 = Instant::now();
 				let public = signer.public().ok_or(PhaseError::MissingPublicKey)?;
+				let point3 = start3.elapsed();
+				trace!(target: "engine", "randomness::advance point3: {} ms", took_ms(&point3));
+
+				let start4 = Instant::now();
 				let cipher = ecies::encrypt(&public, &number_hash.0, number.as_bytes())?;
+				let point4 = start4.elapsed();
+				trace!(target: "engine", "randomness::advance point4: {} ms", took_ms(&point4));
 
 				debug!(target: "engine", "Randomness contract: committing {}.", number_hash);
+
+				let start5 = Instant::now();
 				// Return the call data for the transaction that commits the hash and the encrypted number.
 				let (data, _decoder) = aura_random::functions::commit_hash::call(number_hash, cipher);
+				let point5 = start5.elapsed();
+				trace!(target: "engine", "randomness::advance point5: {} ms", took_ms(&point5));
+
 				Ok(Some(data))
 			}
 			RandomnessPhase::Reveal { round, our_address } => {
+				let start6 = Instant::now();
 				// Load the hash and encrypted number that we stored in the commit phase.
 				let call = aura_random::functions::get_commit_and_cipher::call(round, our_address);
+				let point6 = start6.elapsed();
+				trace!(target: "engine", "randomness::advance point6: {} ms", took_ms(&point6));
+				
+				let start7 = Instant::now();
 				let (committed_hash, cipher) = contract
 					.call_const(call)
 					.map_err(PhaseError::LoadFailed)?;
+				let point7 = start7.elapsed();
+				trace!(target: "engine", "randomness::advance point7: {} ms", took_ms(&point7));
 
+				let start8 = Instant::now();
 				// Decrypt the number and check against the hash.
 				let number_bytes = signer.decrypt(&committed_hash.0, &cipher)?;
+				let point8 = start8.elapsed();
+				trace!(target: "engine", "randomness::advance point8: {} ms", took_ms(&point8));
+
+				let start9 = Instant::now();
 				let number = if number_bytes.len() == 32 {
 					RandNumber::from_slice(&number_bytes)
 				} else {
@@ -240,16 +299,27 @@ impl RandomnessPhase {
 					error!(target: "engine", "Decrypted random number has the wrong length.");
 					return Err(PhaseError::BadRandNumber);
 				};
+				let point9 = start9.elapsed();
+				trace!(target: "engine", "randomness::advance point9: {} ms", took_ms(&point9));
+
+				let start10 = Instant::now();
 				let number_hash: Hash = keccak(number.as_bytes());
 				if number_hash != committed_hash {
 					error!(target: "engine", "Decrypted random number doesn't agree with the hash.");
 					return Err(PhaseError::BadRandNumber);
 				}
+				let point10 = start10.elapsed();
+				trace!(target: "engine", "randomness::advance point10: {} ms", took_ms(&point10));
 
 				debug!(target: "engine", "Randomness contract: scheduling tx to reveal our random number {} (round={}, our_address={}).", number_hash, round, our_address);
+
+				let start11 = Instant::now();
 				// We are now sure that we have the correct secret and can reveal it. So we return the call data for the
 				// transaction that stores the revealed random bytes on the contract.
 				let (data, _decoder) = aura_random::functions::reveal_number::call(number.as_bytes());
+				let point11 = start11.elapsed();
+				trace!(target: "engine", "randomness::advance point11: {} ms", took_ms(&point11));
+				
 				Ok(Some(data))
 			}
 		}

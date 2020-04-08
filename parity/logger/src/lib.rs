@@ -99,7 +99,7 @@ pub fn setup_log(config: &Config) -> Result<Arc<RotatingLogger>, String> {
 	};
 
 	let format = move |buf: &mut Formatter, record: &Record| {
-		let timestamp = time::strftime("%Y-%m-%d %H:%M:%S %Z", &time::now()).unwrap();
+		let timestamp = time::strftime("%Y-%m-%d %H:%M:%S %f %Z", &time::now()).unwrap();
 
 		let with_color = if max_level() <= LevelFilter::Info {
 			format!("{} {}", Colour::Black.bold().paint(timestamp), record.args())

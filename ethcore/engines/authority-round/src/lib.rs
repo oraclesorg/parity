@@ -37,7 +37,7 @@ use std::iter::{self, FromIterator};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Weak, Arc};
-use std::time::{UNIX_EPOCH, Duration};
+use std::time::{UNIX_EPOCH, Duration, Instant};
 use std::u64;
 
 use client_traits::{EngineClient, ForceUpdateSealing, TransactionRequest};
@@ -675,6 +675,9 @@ impl engine::EpochVerifier for EpochVerifier {
 }
 
 fn header_seal_hash(header: &Header, empty_steps_rlp: Option<&[u8]>) -> H256 {
+	let took_ms = |elapsed: &Duration| {
+		elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+	};
 	match empty_steps_rlp {
 		Some(empty_steps_rlp) => {
 			let mut message = header.bare_hash().as_bytes().to_vec();
@@ -682,7 +685,11 @@ fn header_seal_hash(header: &Header, empty_steps_rlp: Option<&[u8]>) -> H256 {
 			keccak(message)
 		},
 		None => {
-			header.bare_hash()
+			let start = Instant::now();
+			let return_hash = header.bare_hash();
+			let took = start.elapsed();
+			trace!(target: "engine", "header_seal_hash took {} ms", took_ms(&took));
+			return_hash
 		},
 	}
 }
@@ -1100,6 +1107,12 @@ impl AuthorityRound {
 
 	/// Make calls to the randomness contract.
 	fn run_randomness_phase(&self, block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
+		let start1 = Instant::now();
+
 		let contract_addr = match self.randomness_contract_address.range(..=block.header.number()).last() {
 			Some((_, &contract_addr)) => contract_addr,
 			None => return Ok(Vec::new()), // No randomness contract.
@@ -1111,23 +1124,50 @@ impl AuthorityRound {
 			None => return Ok(Vec::new()), // We are not a validator, so we shouldn't call the contracts.
 		};
 		let our_addr = signer.address();
+
+		let point1 = start1.elapsed();
+		trace!(target: "engine", "run_randomness_phase point1: {} ms", took_ms(&point1));
+
+		let start2 = Instant::now();
+
 		let client = self.upgrade_client_or("Unable to prepare block")?;
 		let full_client = client.as_full_client()
 			.ok_or_else(|| EngineError::FailedSystemCall("Failed to upgrade to BlockchainClient.".to_string()))?;
+
+		let point2 = start2.elapsed();
+		trace!(target: "engine", "run_randomness_phase point2: {} ms", took_ms(&point2));
+
+		let start3 = Instant::now();
 
 		// Random number generation
 		let contract = util::BoundContract::new(&*client, BlockId::Latest, contract_addr);
 		let phase = randomness::RandomnessPhase::load(&contract, our_addr)
 			.map_err(|err| EngineError::Custom(format!("Randomness error in load(): {:?}", err)))?;
+
+		let point3 = start3.elapsed();
+		trace!(target: "engine", "run_randomness_phase point3: {} ms", took_ms(&point3));
+
+		let start4 = Instant::now();
+
 		let data = match phase.advance(&contract, &mut OsRng, signer.as_ref())
 				.map_err(|err| EngineError::Custom(format!("Randomness error in advance(): {:?}", err)))? {
 			Some(data) => data,
 			None => return Ok(Vec::new()), // Nothing to commit or reveal at the moment.
 		};
 
+		let point4 = start4.elapsed();
+		trace!(target: "engine", "run_randomness_phase point4: {} ms", took_ms(&point4));
+
+		let start5 = Instant::now();
+
 		let nonce = block.state.nonce(&our_addr)?;
 		let tx_request = TransactionRequest::call(contract_addr, data).gas_price(U256::zero()).nonce(nonce);
-		Ok(vec![full_client.create_transaction(tx_request)?])
+		let result = Ok(vec![full_client.create_transaction(tx_request)?]);
+
+		let point5 = start5.elapsed();
+		trace!(target: "engine", "run_randomness_phase point5: {} ms", took_ms(&point5));
+
+		result
 	}
 
 	/// Returns the reference to the client, if registered.
@@ -1389,6 +1429,12 @@ impl Engine for AuthorityRound {
 	/// This operation is synchronous and may (quite reasonably) not be available, in which case
 	/// `Seal::None` will be returned.
 	fn generate_seal(&self, block: &ExecutedBlock, parent: &Header) -> Seal {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
+		let start1 = Instant::now();
+
 		// first check to avoid generating signature most of the time
 		// (but there's still a race to the `compare_and_swap`)
 		if !self.step.can_propose.load(AtomicOrdering::SeqCst) {
@@ -1396,9 +1442,19 @@ impl Engine for AuthorityRound {
 			return Seal::None;
 		}
 
+		let point1 = start1.elapsed();
+		trace!(target: "engine", "generate_seal point1: {} ms", took_ms(&point1));
+
+		let start2 = Instant::now();
+
 		let header = &block.header;
 		let parent_step = header_step(parent, self.empty_steps_transition)
 			.expect("Header has been verified; qed");
+
+		let point2 = start2.elapsed();
+		trace!(target: "engine", "generate_seal point2: {} ms", took_ms(&point2));
+
+		let start3 = Instant::now();
 
 		let step = self.step.inner.load();
 
@@ -1411,11 +1467,21 @@ impl Engine for AuthorityRound {
 
 		let expected_diff = calculate_score(parent_step, step, empty_steps.len());
 
+		let point3 = start3.elapsed();
+		trace!(target: "engine", "generate_seal point3: {} ms", took_ms(&point3));
+
+		let start4 = Instant::now();
+
 		if header.difficulty() != &expected_diff {
 			debug!(target: "engine", "Aborting seal generation. The step or empty_steps have changed in the meantime. {:?} != {:?}",
 				header.difficulty(), expected_diff);
 			return Seal::None;
 		}
+
+		let point4 = start4.elapsed();
+		trace!(target: "engine", "generate_seal point4: {} ms", took_ms(&point4));
+
+		let start5 = Instant::now();
 
 		if parent_step > step {
 			warn!(target: "engine", "Aborting seal generation for invalid step: {} > {}", parent_step, step);
@@ -1435,8 +1501,18 @@ impl Engine for AuthorityRound {
 			Ok(ok) => ok,
 		};
 
+		let point5 = start5.elapsed();
+		trace!(target: "engine", "generate_seal point5: {} ms", took_ms(&point5));
+
+		let start6 = Instant::now();
+
 		if is_step_proposer(&*validators, header.parent_hash(), step, header.author()) {
+			let point6 = start6.elapsed();
+			trace!(target: "engine", "generate_seal point6: {} ms", took_ms(&point6));
 			trace!(target: "engine", "generate_seal: we are step proposer for step={}, block=#{}", step, header.number());
+
+			let start7 = Instant::now();
+
 			// if there are no transactions to include in the block, we don't seal and instead broadcast a signed
 			// `EmptyStep(step, parent_hash)` message. If we exceed the maximum amount of `empty_step` rounds we proceed
 			// with the seal.
@@ -1459,7 +1535,14 @@ impl Engine for AuthorityRound {
 				None
 			};
 
+			let point7 = start7.elapsed();
+			trace!(target: "engine", "generate_seal point7: {} ms", took_ms(&point7));
+
+			let start8 = Instant::now();
+
 			if let Ok(signature) = self.sign(header_seal_hash(header, empty_steps_rlp.as_ref().map(|e| &**e))) {
+				let point8 = start8.elapsed();
+				trace!(target: "engine", "generate_seal point8: {} ms", took_ms(&point8));
 				trace!(target: "engine", "generate_seal: Issuing a block for step {}.", step);
 
 				// only issue the seal if we were the first to reach the compare_and_swap.
@@ -1576,9 +1659,20 @@ impl Engine for AuthorityRound {
 	}
 
 	fn generate_engine_transactions(&self, block: &ExecutedBlock) -> Result<Vec<SignedTransaction>, Error> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		let start1 = Instant::now();
 		let mut transactions = self.run_randomness_phase(block)?;
+		let point1 = start1.elapsed();
+		trace!(target: "engine", "generate_engine_transactions point1: {} ms", took_ms(&point1));
+		
+		let start2 = Instant::now();
 		let nonce = transactions.last().map(|tx| tx.nonce + U256::one());
 		transactions.extend(self.run_posdao(block, nonce)?);
+		let point2 = start2.elapsed();
+		trace!(target: "engine", "generate_engine_transactions point2: {} ms", took_ms(&point2));
+
 		Ok(transactions)
 	}
 
@@ -1909,11 +2003,18 @@ impl Engine for AuthorityRound {
 	}
 
 	fn sign(&self, hash: H256) -> Result<Signature, Error> {
-		Ok(self.signer.read()
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		let start = Instant::now();
+		let result = Ok(self.signer.read()
 			.as_ref()
 			.ok_or(parity_crypto::publickey::Error::InvalidAddress)?
 			.sign(hash)?
-		)
+		);
+		let took = start.elapsed();
+		trace!(target: "engine", "sign took {} ms", took_ms(&took));
+		result
 	}
 
 	fn snapshot_mode(&self) -> Snapshotting {

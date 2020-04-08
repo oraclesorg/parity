@@ -426,6 +426,9 @@ impl Miner {
 	fn prepare_block<C>(&self, chain: &C) -> Option<(ClosedBlock, Option<H256>)> where
 		C: BlockChain + CallContract + BlockProducer + Nonce + Sync,
 	{
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
 		trace_time!("prepare_block");
 		let chain_info = chain.chain_info();
 
@@ -451,7 +454,15 @@ impl Miner {
 				None => {
 					// block not found - create it.
 					trace!(target: "miner", "prepare_block: No existing work - making new block");
+
+					let start1 = Instant::now();
+
 					let params = self.params.read().clone();
+
+					let point1 = start1.elapsed();
+					trace!(target: "miner", "prepare_block point1: {} ms", took_ms(&point1));
+
+					let start2 = Instant::now();
 
 					let block = match chain.prepare_open_block(
 						params.author,
@@ -465,6 +476,9 @@ impl Miner {
 							return None;
 						}
 					};
+
+					let point2 = start2.elapsed();
+					trace!(target: "miner", "prepare_block point2: {} ms", took_ms(&point2));
 
 					// Before adding from the queue to the new block, give the engine a chance to add transactions.
 					match self.engine.generate_engine_transactions(&block) {
