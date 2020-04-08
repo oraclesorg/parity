@@ -19,7 +19,7 @@ vm = { path = "../vm" }
 
 # used from test-helpers
 accounts = { package = "ethcore-accounts", path = "../../accounts", optional = true }
-log = { version = "0.4.8", optional = true }
+log = { version = "0.4.8" }
 ethkey = { path = "../../accounts/ethkey", optional = true }
 
 [dev-dependencies]
@@ -28,4 +28,4 @@ ethkey = { path = "../../accounts/ethkey" }
 log = "0.4.8"
 
 [features]
-test-helpers = ["accounts", "log", "ethkey"]
+test-helpers = ["accounts", "ethkey"]

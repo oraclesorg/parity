@@ -18,6 +18,9 @@
 
 use ethereum_types::{H256, Address};
 use parity_crypto::publickey::{ecies, Public, Signature, KeyPair, Error};
+use std::time::{Duration, Instant};
+
+use log::trace;
 
 /// Everything that an Engine needs to sign messages.
 pub trait EngineSigner: Send + Sync {
@@ -43,7 +46,14 @@ struct Signer(KeyPair);
 
 impl EngineSigner for Signer {
 	fn sign(&self, hash: H256) -> Result<Signature, Error> {
-		parity_crypto::publickey::sign(self.0.secret(), &hash)
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		let start = Instant::now();
+		let result = parity_crypto::publickey::sign(self.0.secret(), &hash);
+		let took = start.elapsed();
+		trace!(target: "engine", "EngineSigner::sign took {} ms", took_ms(&took));
+		result
 	}
 
 	fn decrypt(&self, auth_data: &[u8], cipher: &[u8]) -> Result<Vec<u8>, Error> {

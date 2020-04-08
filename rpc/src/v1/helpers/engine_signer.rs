@@ -20,6 +20,9 @@ use accounts::AccountProvider;
 use ethkey::Password;
 use crypto::publickey::{Address, Message, Public, Signature, Error};
 
+use std::time::{Duration, Instant};
+use log::trace;
+
 /// An implementation of EngineSigner using internal account management.
 pub struct EngineSigner {
 	accounts: Arc<AccountProvider>,
@@ -36,10 +39,17 @@ impl EngineSigner {
 
 impl engine::signer::EngineSigner for EngineSigner {
 	fn sign(&self, message: Message) -> Result<Signature, Error> {
-		match self.accounts.sign(self.address, Some(self.password.clone()), message) {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		let start = Instant::now();
+		let result = match self.accounts.sign(self.address, Some(self.password.clone()), message) {
 			Ok(ok) => Ok(ok),
 			Err(_) => Err(Error::InvalidSecretKey),
-		}
+		};
+		let took = start.elapsed();
+		trace!(target: "engine", "EngineSigner::sign(2) took {} ms", took_ms(&took));
+		result
 	}
 
 	fn decrypt(&self, auth_data: &[u8], cipher: &[u8]) -> Result<Vec<u8>, Error> {
