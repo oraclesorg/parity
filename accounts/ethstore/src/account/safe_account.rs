@@ -22,6 +22,8 @@ use account::Version;
 use crypto;
 use super::crypto::Crypto;
 
+use std::time::{Instant, Duration};
+
 /// Account representation.
 #[derive(Debug, PartialEq, Clone)]
 pub struct SafeAccount {
@@ -155,14 +157,40 @@ impl SafeAccount {
 
 	/// Sign a message.
 	pub fn sign(&self, password: &Password, message: &Message) -> Result<Signature, Error> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
+		let start1 = Instant::now();
 		let secret = self.crypto.secret(password)?;
-		sign(&secret, message).map_err(From::from)
+		let took1 = start1.elapsed();
+		trace!(target: "engine", "SafeAccount::sign1 took {} ms", took_ms(&took1));
+		
+		let start2 = Instant::now();
+		let result = sign(&secret, message).map_err(From::from);
+		let took2 = start2.elapsed();
+		trace!(target: "engine", "SafeAccount::sign2 took {} ms", took_ms(&took2));
+
+		result
 	}
 
 	/// Decrypt a message.
 	pub fn decrypt(&self, password: &Password, shared_mac: &[u8], message: &[u8]) -> Result<Vec<u8>, Error> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
+		let start1 = Instant::now();
 		let secret = self.crypto.secret(password)?;
-		crypto::publickey::ecies::decrypt(&secret, shared_mac, message).map_err(From::from)
+		let took1 = start1.elapsed();
+		trace!(target: "engine", "SafeAccount::decrypt1 took {} ms", took_ms(&took1));
+
+		let start2 = Instant::now();
+		let result = crypto::publickey::ecies::decrypt(&secret, shared_mac, message).map_err(From::from);
+		let took2 = start2.elapsed();
+		trace!(target: "engine", "SafeAccount::decrypt2 took {} ms", took_ms(&took2));
+		
+		result
 	}
 
 	/// Agree on shared key.
@@ -173,8 +201,21 @@ impl SafeAccount {
 
 	/// Derive public key.
 	pub fn public(&self, password: &Password) -> Result<Public, Error> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
+		let start1 = Instant::now();
 		let secret = self.crypto.secret(password)?;
-		Ok(KeyPair::from_secret(secret)?.public().clone())
+		let took1 = start1.elapsed();
+		trace!(target: "engine", "SafeAccount::public1 took {} ms", took_ms(&took1));
+		
+		let start2 = Instant::now();
+		let result = Ok(KeyPair::from_secret(secret)?.public().clone());
+		let took2 = start2.elapsed();
+		trace!(target: "engine", "SafeAccount::public2 took {} ms", took_ms(&took2));
+
+		result
 	}
 
 	/// Change account's password.

@@ -57,7 +57,14 @@ impl EngineSigner for Signer {
 	}
 
 	fn decrypt(&self, auth_data: &[u8], cipher: &[u8]) -> Result<Vec<u8>, Error> {
-		ecies::decrypt(self.0.secret(), auth_data, cipher)
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		let start = Instant::now();
+		let result = ecies::decrypt(self.0.secret(), auth_data, cipher);
+		let took = start.elapsed();
+		trace!(target: "engine", "EngineSigner::decrypt (ethcore/engine/src/signer.rs) took {} ms", took_ms(&took));
+		result
 	}
 
 	fn address(&self) -> Address {
@@ -65,6 +72,13 @@ impl EngineSigner for Signer {
 	}
 
 	fn public(&self) -> Option<Public> {
-		Some(*self.0.public())
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		let start = Instant::now();
+		let result = Some(*self.0.public());
+		let took = start.elapsed();
+		trace!(target: "engine", "EngineSigner::public (ethcore/engine/src/signer.rs) took {} ms", took_ms(&took));
+		result
 	}
 }

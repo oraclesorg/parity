@@ -100,7 +100,14 @@ impl SimpleSecretStore for EthStore {
 	}
 
 	fn sign(&self, account: &StoreAccountRef, password: &Password, message: &Message) -> Result<Signature, Error> {
-		self.get(account)?.sign(password, message)
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		let start = Instant::now();
+		let result = self.get(account)?.sign(password, message);
+		let took = start.elapsed();
+		trace!(target: "engine", "SecretStore::sign took {} ms", took_ms(&took));
+		result
 	}
 
 	fn sign_derived(&self, account_ref: &StoreAccountRef, password: &Password, derivation: Derivation, message: &Message)
@@ -114,8 +121,15 @@ impl SimpleSecretStore for EthStore {
 	}
 
 	fn decrypt(&self, account: &StoreAccountRef, password: &Password, shared_mac: &[u8], message: &[u8]) -> Result<Vec<u8>, Error> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
 		let account = self.get(account)?;
-		account.decrypt(password, shared_mac, message)
+		let start = Instant::now();
+		let result = account.decrypt(password, shared_mac, message);
+		let took = start.elapsed();
+		trace!(target: "engine", "SecretStore::decrypt took {} ms", took_ms(&took));
+		result
 	}
 
 	fn create_vault(&self, name: &str, password: &Password) -> Result<(), Error> {
@@ -193,8 +207,18 @@ impl SecretStore for EthStore {
 	}
 
 	fn public(&self, account: &StoreAccountRef, password: &Password) -> Result<Public, Error> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
 		let account = self.get(account)?;
-		account.public(password)
+
+		let start = Instant::now();
+		let result = account.public(password);
+		let took = start.elapsed();
+		trace!(target: "engine", "SecretStore::public took {} ms", took_ms(&took));
+
+		result
 	}
 
 	fn uuid(&self, account: &StoreAccountRef) -> Result<Uuid, Error> {
@@ -550,17 +574,45 @@ impl SimpleSecretStore for EthMultiStore {
 	}
 
 	fn sign(&self, account: &StoreAccountRef, password: &Password, message: &Message) -> Result<Signature, Error> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		
+		let start1 = Instant::now();
 		let accounts = self.get_matching(account, password)?;
+		let took1 = start1.elapsed();
+		trace!(target: "engine", "SecretStore::sign(2.1) took {} ms", took_ms(&took1));
+		
 		match accounts.first() {
-			Some(ref account) => account.sign(password, message),
+			Some(ref account) => {
+				let start2 = Instant::now();
+				let result = account.sign(password, message);
+				let took2 = start2.elapsed();
+				trace!(target: "engine", "SecretStore::sign(2.2) took {} ms", took_ms(&took2));
+				result
+			},
 			None => Err(Error::InvalidPassword),
 		}
 	}
 
 	fn decrypt(&self, account: &StoreAccountRef, password: &Password, shared_mac: &[u8], message: &[u8]) -> Result<Vec<u8>, Error> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
+		let start1 = Instant::now();
 		let accounts = self.get_matching(account, password)?;
+		let took1 = start1.elapsed();
+		trace!(target: "engine", "SecretStore::decrypt(2.1) took {} ms", took_ms(&took1));
+
 		match accounts.first() {
-			Some(ref account) => account.decrypt(password, shared_mac, message),
+			Some(ref account) => {
+				let start2 = Instant::now();
+				let result = account.decrypt(password, shared_mac, message);
+				let took2 = start2.elapsed();
+				trace!(target: "engine", "SecretStore::decrypt(2.2) took {} ms", took_ms(&took2));
+				result
+			},
 			None => Err(Error::InvalidPassword),
 		}
 	}

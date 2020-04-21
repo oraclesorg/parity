@@ -23,6 +23,8 @@ use random::Random;
 use smallvec::SmallVec;
 use account::{Cipher, Kdf, Aes128Ctr, Pbkdf2, Prf};
 
+use std::time::{Instant, Duration};
+
 /// Encrypted data
 #[derive(Debug, PartialEq, Clone)]
 pub struct Crypto {
@@ -116,12 +118,25 @@ impl Crypto {
 
 	/// Try to decrypt and convert result to account secret
 	pub fn secret(&self, password: &Password) -> Result<Secret, Error> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
 		if self.ciphertext.len() > 32 {
 			return Err(Error::InvalidSecret);
 		}
 
+		let start1 = Instant::now();
 		let secret = self.do_decrypt(password, 32)?;
-		Ok(Secret::import_key(&secret)?)
+		let took1 = start1.elapsed();
+		trace!(target: "engine", "Crypto::secret1 took {} ms", took_ms(&took1));
+
+		let start2 = Instant::now();
+		let result = Ok(Secret::import_key(&secret)?);
+		let took2 = start2.elapsed();
+		trace!(target: "engine", "Crypto::secret2 took {} ms", took_ms(&took2));
+
+		result
 	}
 
 	/// Try to decrypt and return result as is
@@ -131,18 +146,46 @@ impl Crypto {
 	}
 
 	fn do_decrypt(&self, password: &Password, expected_len: usize) -> Result<Vec<u8>, Error> {
-		let (derived_left_bits, derived_right_bits) = match self.kdf {
-			Kdf::Pbkdf2(ref params) => crypto::derive_key_iterations(password.as_bytes(), &params.salt, params.c),
-			Kdf::Scrypt(ref params) => crypto::scrypt::derive_key(password.as_bytes(), &params.salt, params.n, params.p, params.r)?,
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
 		};
 
+		let start1 = Instant::now();
+
+		let (derived_left_bits, derived_right_bits) = match self.kdf {
+			Kdf::Pbkdf2(ref params) => {
+				let start2 = Instant::now();
+				let result = crypto::derive_key_iterations(password.as_bytes(), &params.salt, params.c);
+				let took2 = start2.elapsed();
+				trace!(target: "engine", "Crypto::do_decrypt2 took {} ms, c = {}", took_ms(&took2), params.c);
+				result
+			},
+			Kdf::Scrypt(ref params) => {
+				let start3 = Instant::now();
+				let result = crypto::scrypt::derive_key(password.as_bytes(), &params.salt, params.n, params.p, params.r)?;
+				let took3 = start3.elapsed();
+				trace!(target: "engine", "Crypto::do_decrypt3 took {} ms, n = {}, p = {}, r = {}", took_ms(&took3), params.n, params.p, params.r);
+				result
+			},
+		};
+
+		let took1 = start1.elapsed();
+		trace!(target: "engine", "Crypto::do_decrypt1 took {} ms", took_ms(&took1));
+
+		let start4 = Instant::now();
 		let mac = crypto::derive_mac(&derived_right_bits, &self.ciphertext).keccak256();
+		let took4 = start4.elapsed();
+		trace!(target: "engine", "Crypto::do_decrypt4 took {} ms", took_ms(&took4));
 
 		if !crypto::is_equal(&mac, &self.mac) {
 			return Err(Error::InvalidPassword)
 		}
 
+		trace!(target: "engine", "Crypto::do_decrypt5");
+
 		let mut plain: SmallVec<[u8; 32]> = SmallVec::from_vec(vec![0; expected_len]);
+
+		trace!(target: "engine", "Crypto::do_decrypt6");
 
 		match self.cipher {
 			Cipher::Aes128Ctr(ref params) => {
@@ -150,8 +193,18 @@ impl Crypto {
 				debug_assert!(expected_len >= self.ciphertext.len());
 
 				let from = expected_len - self.ciphertext.len();
+
+				let start7 = Instant::now();
 				crypto::aes::decrypt_128_ctr(&derived_left_bits, &params.iv, &self.ciphertext, &mut plain[from..])?;
-				Ok(plain.into_iter().collect())
+				let took7 = start7.elapsed();
+				trace!(target: "engine", "Crypto::do_decrypt7 took {} ms", took_ms(&took7));
+				
+				let start8 = Instant::now();
+				let result = Ok(plain.into_iter().collect());
+				let took8 = start8.elapsed();
+				trace!(target: "engine", "Crypto::do_decrypt8 took {} ms", took_ms(&took8));
+
+				result
 			},
 		}
 	}

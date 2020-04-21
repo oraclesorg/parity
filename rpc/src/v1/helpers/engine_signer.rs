@@ -53,10 +53,17 @@ impl engine::signer::EngineSigner for EngineSigner {
 	}
 
 	fn decrypt(&self, auth_data: &[u8], cipher: &[u8]) -> Result<Vec<u8>, Error> {
-		self.accounts.decrypt(self.address, None, auth_data, cipher).map_err(|e| {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		let start = Instant::now();
+		let result = self.accounts.decrypt(self.address, None, auth_data, cipher).map_err(|e| {
 			warn!("Unable to decrypt message: {:?}", e);
 			Error::InvalidMessage
-		})
+		});
+		let took = start.elapsed();
+		trace!(target: "engine", "EngineSigner::decrypt (rpc/src/v1/helpers/engine_signer.rs) took {} ms", took_ms(&took));
+		result
 	}
 
 	fn address(&self) -> Address {
@@ -64,7 +71,14 @@ impl engine::signer::EngineSigner for EngineSigner {
 	}
 
 	fn public(&self) -> Option<Public> {
-		self.accounts.account_public(self.address, &self.password).ok()
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		let start = Instant::now();
+		let result = self.accounts.account_public(self.address, &self.password).ok();
+		let took = start.elapsed();
+		trace!(target: "engine", "EngineSigner::public (rpc/src/v1/helpers/engine_signer.rs) took {} ms", took_ms(&took));
+		result
 	}
 }
 

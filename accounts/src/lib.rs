@@ -35,7 +35,7 @@ use ethstore::{
 	SimpleSecretStore, SecretStore, EthStore, EthMultiStore,
 	random_string, SecretVaultRef, StoreAccountRef, OpaqueSecret,
 };
-use log::warn;
+use log::{trace, warn};
 use parking_lot::RwLock;
 
 pub use ethstore::{Derivation, IndexDerivation, KeyFile, Error};
@@ -236,7 +236,21 @@ impl AccountProvider {
 
 	/// Returns account public key.
 	pub fn account_public(&self, address: Address, password: &Password) -> Result<Public, Error> {
-		self.sstore.public(&self.sstore.account_ref(&address)?, password)
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
+		let start1 = Instant::now();
+		let accref = self.sstore.account_ref(&address)?;
+		let took1 = start1.elapsed();
+		trace!(target: "engine", "AccountProvider::account_public1 took {} ms", took_ms(&took1));
+
+		let start2 = Instant::now();
+		let result = self.sstore.public(&accref, password);
+		let took2 = start2.elapsed();
+		trace!(target: "engine", "AccountProvider::account_public2 took {} ms", took_ms(&took2));
+		
+		result
 	}
 
 	/// Returns each account along with name and meta.
@@ -350,14 +364,39 @@ impl AccountProvider {
 
 	/// Signs the message. If password is not provided the account must be unlocked.
 	pub fn sign(&self, address: Address, password: Option<Password>, message: Message) -> Result<Signature, SignError> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+
+		let start1 = Instant::now();
 		let account = self.sstore.account_ref(&address)?;
+		let took1 = start1.elapsed();
+		trace!(target: "engine", "AccountProvider::sign1 took {} ms", took_ms(&took1));
+
 		match self.unlocked_secrets.read().get(&account) {
 			Some(secret) => {
-				Ok(self.sstore.sign_with_secret(&secret, &message)?)
+				trace!(target: "engine", "AccountProvider::sign2");
+
+				let start3 = Instant::now();
+				let result = Ok(self.sstore.sign_with_secret(&secret, &message)?);
+				let took3 = start3.elapsed();
+				trace!(target: "engine", "AccountProvider::sign3 took {} ms", took_ms(&took3));
+				result
 			},
 			None => {
+				trace!(target: "engine", "AccountProvider::sign2");
+
+				let start4 = Instant::now();
 				let password = password.map(Ok).unwrap_or_else(|| self.password(&account))?;
-				Ok(self.sstore.sign(&account, &password, &message)?)
+				let took4 = start4.elapsed();
+				trace!(target: "engine", "AccountProvider::sign4 took {} ms", took_ms(&took4));
+				
+				let start5 = Instant::now();
+				let result = Ok(self.sstore.sign(&account, &password, &message)?);
+				let took5 = start5.elapsed();
+				trace!(target: "engine", "AccountProvider::sign5 took {} ms", took_ms(&took5));
+				
+				result
 			}
 		}
 	}
@@ -417,9 +456,26 @@ impl AccountProvider {
 
 	/// Decrypts a message. If password is not provided the account must be unlocked.
 	pub fn decrypt(&self, address: Address, password: Option<Password>, shared_mac: &[u8], message: &[u8]) -> Result<Vec<u8>, SignError> {
+		let took_ms = |elapsed: &Duration| {
+			elapsed.as_secs() * 1000 + elapsed.subsec_nanos() as u64 / 1_000_000
+		};
+		
+		let start1 = Instant::now();
 		let account = self.sstore.account_ref(&address)?;
+		let took1 = start1.elapsed();
+		trace!(target: "engine", "AccountProvider::decrypt1 took {} ms", took_ms(&took1));
+		
+		let start2 = Instant::now();
 		let password = password.map(Ok).unwrap_or_else(|| self.password(&account))?;
-		Ok(self.sstore.decrypt(&account, &password, shared_mac, message)?)
+		let took2 = start2.elapsed();
+		trace!(target: "engine", "AccountProvider::decrypt2 took {} ms", took_ms(&took2));
+		
+		let start3 = Instant::now();
+		let result = Ok(self.sstore.decrypt(&account, &password, shared_mac, message)?);
+		let took3 = start3.elapsed();
+		trace!(target: "engine", "AccountProvider::decrypt3 took {} ms", took_ms(&took3));
+		
+		result
 	}
 
 	/// Agree on shared key.
